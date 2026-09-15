@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..600;1,6..72,200..600&family=Karla:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="./image-slot.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { background: #FAF4EA; -webkit-font-smoothing: antialiased; }
+  a { color: #A8571F; text-decoration-color: rgba(168, 87, 31, 0.35); text-underline-offset: 3px; }
+  a:hover { color: #7C3D12; text-decoration-color: rgba(124, 61, 18, 0.8); }
+  @keyframes scout-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  @keyframes scout-fade { from { opacity: 0; } to { opacity: 1; } }
+</style>
+</helmet>
+<div style="background: #FAF4EA; color: #2B211B; font-family: Newsreader, Georgia, serif; overflow-x: hidden">
+
+  <div style="position: relative; background-image: radial-gradient(120% 80% at 12% -10%, #FFFDF8 0%, rgba(255,253,248,0) 60%), radial-gradient(90% 70% at 100% 0%, #F3E6D2 0%, rgba(243,230,210,0) 65%)">
+    <header style="max-width: 1120px; margin: 0 auto; padding: clamp(28px, 6vw, 72px) clamp(20px, 5vw, 56px) clamp(40px, 7vw, 88px); display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: clamp(28px, 5vw, 64px); align-items: center">
+      <div style="animation: scout-rise 900ms cubic-bezier(.2,.7,.3,1) both">
+        <div style="font-family: Karla, system-ui, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #A8571F; margin-bottom: clamp(14px, 2.5vw, 26px)">In loving memory</div>
+        <h1 style="margin: 0; font-size: clamp(76px, 15vw, 168px); line-height: 0.82; font-weight: 300; letter-spacing: -0.035em; color: #241A14">Scout</h1>
+        <div style="margin-top: clamp(20px, 3vw, 34px); display: flex; align-items: center; gap: 16px">
+          <div style="height: 1px; width: clamp(36px, 8vw, 72px); background: #D9C4A6"></div>
+          <span style="font-family: Karla, system-ui, sans-serif; font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: #6B5748">A good boy, always</span>
+        </div>
+        <p style="margin: clamp(22px, 3.5vw, 36px) 0 0; font-size: clamp(21px, 2.4vw, 27px); line-height: 1.5; font-style: italic; font-weight: 300; color: #4A3B31; max-width: 30ch; text-wrap: pretty">Rest well, my scouty boy.</p>
+      </div>
+      <div style="position: relative; animation: scout-rise 1100ms 120ms cubic-bezier(.2,.7,.3,1) both">
+        <div style="position: absolute; inset: clamp(14px, 3vw, 26px) calc(-1 * clamp(10px, 2vw, 20px)) calc(-1 * clamp(14px, 3vw, 26px)) clamp(10px, 2vw, 20px); border: 1px solid #E2D2BC; border-radius: 4px"></div>
+        <div style="position: relative; aspect-ratio: 4 / 5; background: #EDE2D1; border-radius: 3px; box-shadow: 0 26px 60px -26px rgba(64, 42, 25, 0.38), 0 2px 6px rgba(64, 42, 25, 0.1); overflow: hidden">
+          <image-slot id="scout-hero" shape="rect" fit="cover" placeholder="Drop Scout's lead photo"></image-slot>
+        </div>
+      </div>
+    </header>
+  </div>
+
+  <div style="height: 1px; background: linear-gradient(90deg, rgba(217,196,166,0) 0%, #D9C4A6 50%, rgba(217,196,166,0) 100%)"></div>
+
+  <section style="max-width: 720px; margin: 0 auto; padding: clamp(52px, 9vw, 112px) clamp(20px, 5vw, 40px)">
+    <p style="margin: 0; font-size: clamp(22px, 2.6vw, 29px); line-height: 1.62; font-weight: 300; color: #33271F; text-wrap: pretty"><span style="float: left; font-size: clamp(66px, 9vw, 96px); line-height: 0.76; font-weight: 300; padding: 6px 14px 0 0; color: #A8571F">T</span>his page is dedicated to my dog Scout. He was a huge part of my life, even if he was just a dog, and I felt like he deserved some sort of recognition. He mattered to me, and I just want that to be known.</p>
+    <p style="margin: clamp(26px, 4vw, 40px) 0 0; font-size: clamp(19px, 2.1vw, 23px); line-height: 1.72; font-weight: 300; color: #4A3B31; text-wrap: pretty">Scout, you are sorely missed by everyone who had the pleasure of meeting you. You left a mark on everyone that I don't think will be forgotten. I just wish you could know how much we all wanted you to stay around longer. I tried to give you the best life I could buddy, and you will live on through me forever, you helped me become the person I am today.</p>
+  </section>
+
+  <section style="background: #F3E9DA; border-top: 1px solid #E5D6C0; border-bottom: 1px solid #E5D6C0">
+    <div style="max-width: 1000px; margin: 0 auto; padding: clamp(44px, 7vw, 88px) clamp(20px, 5vw, 48px)">
+      <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: clamp(22px, 3.5vw, 34px)">
+        <h2 style="margin: 0; font-size: clamp(30px, 4.4vw, 46px); font-weight: 300; letter-spacing: -0.02em; color: #241A14">Him, in pictures</h2>
+        <div style="font-family: Karla, system-ui, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: #6B5748">{{ counter }}</div>
+      </div>
+
+      <div onMouseEnter="{{ hold }}" onMouseLeave="{{ resume }}" onTouchStart="{{ onTouchStart }}" onTouchEnd="{{ onTouchEnd }}" style="position: relative; aspect-ratio: 3 / 2; width: 100%; background: #E6D9C5; border: 1px solid #DFCEB5; border-radius: 3px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 22px 48px -28px rgba(64, 42, 25, 0.35); overflow: hidden; touch-action: pan-y">
+        <div style="position: absolute; inset: 0; transition: opacity 900ms cubic-bezier(.4,0,.2,1); opacity: {{ op0 }}"><image-slot id="scout-s1" shape="rect" fit="contain" placeholder="Photo 1"></image-slot></div>
+        <div style="position: absolute; inset: 0; transition: opacity 900ms cubic-bezier(.4,0,.2,1); opacity: {{ op1 }}"><image-slot id="scout-s2" shape="rect" fit="contain" placeholder="Photo 2"></image-slot></div>
+        <div style="position: absolute; inset: 0; transition: opacity 900ms cubic-bezier(.4,0,.2,1); opacity: {{ op2 }}"><image-slot id="scout-s3" shape="rect" fit="contain" placeholder="Photo 3"></image-slot></div>
+        <div style="position: absolute; inset: 0; transition: opacity 900ms cubic-bezier(.4,0,.2,1); opacity: {{ op3 }}"><image-slot id="scout-s4" shape="rect" fit="contain" placeholder="Photo 4"></image-slot></div>
+        <div style="position: absolute; inset: 0; transition: opacity 900ms cubic-bezier(.4,0,.2,1); opacity: {{ op4 }}"><image-slot id="scout-s5" shape="rect" fit="contain" placeholder="Photo 5"></image-slot></div>
+        <div style="position: absolute; inset: 0; transition: opacity 900ms cubic-bezier(.4,0,.2,1); opacity: {{ op5 }}"><image-slot id="scout-s6" shape="rect" fit="contain" placeholder="Photo 6"></image-slot></div>
+      </div>
+
+      <div style="margin-top: clamp(18px, 2.6vw, 26px); display: flex; align-items: center; justify-content: center; gap: clamp(16px, 3vw, 28px); flex-wrap: wrap">
+        <button type="button" onClick="{{ prev }}" aria-label="Previous photo" style="width: 48px; height: 48px; flex: none; display: grid; place-items: center; border: 1px solid #DBC8AE; border-radius: 999px; background: #FAF4EA; color: #6B5748; cursor: pointer; transition: background 200ms ease, color 200ms ease, border-color 200ms ease, transform 200ms ease" style-hover="background: #A8571F; border-color: #A8571F; color: #FFF8EC; transform: translateX(-2px)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 2.5 4.5 8l5.5 5.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <div style="display: flex; align-items: center; gap: 12px">
+          <button type="button" onClick="{{ go0 }}" aria-label="Photo 1" style="width: 22px; height: 22px; flex: none; display: grid; place-items: center; border: none; background: none; padding: 0; cursor: pointer"><span style="display: block; width: 8px; height: 8px; border-radius: 999px; transition: all 300ms ease; background: {{ dot0 }}; transform: scale({{ ds0 }})"></span></button>
+          <button type="button" onClick="{{ go1 }}" aria-label="Photo 2" style="width: 22px; height: 22px; flex: none; display: grid; place-items: center; border: none; background: none; padding: 0; cursor: pointer"><span style="display: block; width: 8px; height: 8px; border-radius: 999px; transition: all 300ms ease; background: {{ dot1 }}; transform: scale({{ ds1 }})"></span></button>
+          <button type="button" onClick="{{ go2 }}" aria-label="Photo 3" style="width: 22px; height: 22px; flex: none; display: grid; place-items: center; border: none; background: none; padding: 0; cursor: pointer"><span style="display: block; width: 8px; height: 8px; border-radius: 999px; transition: all 300ms ease; background: {{ dot2 }}; transform: scale({{ ds2 }})"></span></button>
+          <button type="button" onClick="{{ go3 }}" aria-label="Photo 4" style="width: 22px; height: 22px; flex: none; display: grid; place-items: center; border: none; background: none; padding: 0; cursor: pointer"><span style="display: block; width: 8px; height: 8px; border-radius: 999px; transition: all 300ms ease; background: {{ dot3 }}; transform: scale({{ ds3 }})"></span></button>
+          <button type="button" onClick="{{ go4 }}" aria-label="Photo 5" style="width: 22px; height: 22px; flex: none; display: grid; place-items: center; border: none; background: none; padding: 0; cursor: pointer"><span style="display: block; width: 8px; height: 8px; border-radius: 999px; transition: all 300ms ease; background: {{ dot4 }}; transform: scale({{ ds4 }})"></span></button>
+          <button type="button" onClick="{{ go5 }}" aria-label="Photo 6" style="width: 22px; height: 22px; flex: none; display: grid; place-items: center; border: none; background: none; padding: 0; cursor: pointer"><span style="display: block; width: 8px; height: 8px; border-radius: 999px; transition: all 300ms ease; background: {{ dot5 }}; transform: scale({{ ds5 }})"></span></button>
+        </div>
+        <button type="button" onClick="{{ next }}" aria-label="Next photo" style="width: 48px; height: 48px; flex: none; display: grid; place-items: center; border: 1px solid #DBC8AE; border-radius: 999px; background: #FAF4EA; color: #6B5748; cursor: pointer; transition: background 200ms ease, color 200ms ease, border-color 200ms ease, transform 200ms ease" style-hover="background: #A8571F; border-color: #A8571F; color: #FFF8EC; transform: translateX(2px)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 2.5 11.5 8 6 13.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+      </div>
+      <p style="margin: clamp(14px, 2vw, 20px) 0 0; text-align: center; font-family: Karla, system-ui, sans-serif; font-size: 13px; color: #6B5748">Arrow keys, or swipe on a phone.</p>
+    </div>
+  </section>
+
+  <section style="max-width: 1000px; margin: 0 auto; padding: clamp(52px, 9vw, 112px) clamp(20px, 5vw, 48px)">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 20px; margin-bottom: clamp(20px, 3vw, 30px)">
+      <h2 style="margin: 0; font-size: clamp(30px, 4.4vw, 46px); font-weight: 300; letter-spacing: -0.02em; color: #241A14">The catch</h2>
+      <span style="font-family: Karla, system-ui, sans-serif; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: #6B5748">Slow motion</span>
+    </div>
+    <div style="position: relative; aspect-ratio: 16 / 9; width: 100%; background: #221A15; border-radius: 3px; overflow: hidden; box-shadow: 0 26px 60px -30px rgba(34, 26, 21, 0.55)">
+      <video src="./scout-frisbee.mp4" poster="" playsinline="true" loop="true" muted="true" autoPlay="true" controls="true" id="scout-frisbee-video" style="width: 100%; height: 100%; object-fit: contain; display: block; background: #221A15"></video>
+      <sc-if value="{{ videoMissing }}" hint-placeholder-val="{{ false }}">
+        <div style="position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; background: #221A15; animation: scout-fade 400ms ease both">
+          <div>
+            <div style="width: 54px; height: 54px; margin: 0 auto 18px; border: 1px solid rgba(250, 244, 234, 0.35); border-radius: 999px; display: grid; place-items: center; color: #FAF4EA">
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 3.2v9.6l8-4.8-8-4.8Z" fill="currentColor" /></svg>
+            </div>
+            <p style="margin: 0; font-size: clamp(19px, 2.2vw, 24px); font-weight: 300; color: #FAF4EA">The frisbee clip goes here.</p>
+            <p style="margin: 10px auto 0; max-width: 46ch; font-family: Karla, system-ui, sans-serif; font-size: 14px; line-height: 1.6; color: rgba(250, 244, 234, 0.7)">Drop the slow-mo file into the project as <span style="font-family: ui-monospace, monospace">scout-frisbee.mp4</span> and it plays right here — looping, silent, no controls chrome in the way.</p>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+    <p style="margin: clamp(16px, 2.4vw, 22px) 0 0; font-size: clamp(18px, 2vw, 21px); line-height: 1.7; font-weight: 300; font-style: italic; color: #4A3B31; max-width: 52ch; text-wrap: pretty">He never once doubted that the frisbee was coming back.</p>
+  </section>
+
+  <footer style="border-top: 1px solid #E5D6C0; background: #F3E9DA">
+    <div style="max-width: 1000px; margin: 0 auto; padding: clamp(40px, 6vw, 72px) clamp(20px, 5vw, 48px); text-align: center">
+      <div style="font-size: clamp(26px, 3.6vw, 38px); font-weight: 300; font-style: italic; color: #33271F">Scout</div>
+      <div style="margin-top: 14px; font-family: Karla, system-ui, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #8F4818">Sorely missed</div>
+    </div>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#7C4B4B&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#A8571F&quot;,&quot;#8A6A3B&quot;,&quot;#7C4B4B&quot;,&quot;#5B6B52&quot;],&quot;section&quot;:&quot;Look&quot;},&quot;autoplaySeconds&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:6,&quot;min&quot;:0,&quot;max&quot;:20,&quot;unit&quot;:&quot;s&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Slideshow&quot;}}">
+class Component extends DCLogic {
+  state = { i: 0, paused: false, videoMissing: false };
+
+  componentDidMount() {
+    this.onKey = (e) => {
+      if (e.key === 'ArrowRight') this.step(1);
+      else if (e.key === 'ArrowLeft') this.step(-1);
+    };
+    window.addEventListener('keydown', this.onKey);
+    this.tick();
+    this.watchVideo = setInterval(() => {
+      const v = document.getElementById('scout-frisbee-video');
+      if (!v) return;
+      clearInterval(this.watchVideo);
+      const fail = () => this.setState({ videoMissing: true });
+      v.addEventListener('error', fail);
+      if (v.networkState === 3 || (v.error && v.error.code)) fail();
+    }, 120);
+  }
+  componentWillUnmount() {
+    window.removeEventListener('keydown', this.onKey);
+    clearTimeout(this.timer);
+    clearInterval(this.watchVideo);
+  }
+  get count() { return 6; }
+  get interval() { return (this.props.autoplaySeconds ?? 6) * 1000; }
+
+  tick() {
+    clearTimeout(this.timer);
+    if (this.props.autoplaySeconds === 0) return;
+    this.timer = setTimeout(() => {
+      if (!this.state.paused) this.step(1);
+      this.tick();
+    }, this.interval);
+  }
+  step(d) {
+    this.setState((s) => ({ i: (s.i + d + this.count) % this.count }));
+  }
+  goTo(n) {
+    this.setState({ i: n });
+    this.tick();
+  }
+
+  renderVals() {
+    const { i } = this.state;
+    const accent = this.props.accent ?? '#A8571F';
+    const vals = {
+      counter: String(i + 1).padStart(2, '0') + ' / ' + String(this.count).padStart(2, '0'),
+      prev: () => { this.step(-1); this.tick(); },
+      next: () => { this.step(1); this.tick(); },
+      hold: () => this.setState({ paused: true }),
+      resume: () => this.setState({ paused: false }),
+      onTouchStart: (e) => { this.tx = e.touches[0].clientX; },
+      onTouchEnd: (e) => {
+        if (this.tx == null) return;
+        const dx = e.changedTouches[0].clientX - this.tx;
+        if (Math.abs(dx) > 44) { this.step(dx < 0 ? 1 : -1); this.tick(); }
+        this.tx = null;
+      },
+      videoMissing: this.state.videoMissing
+    };
+    for (let n = 0; n < this.count; n++) {
+      vals['op' + n] = n === i ? 1 : 0;
+      vals['dot' + n] = n === i ? accent : '#CDB79A';
+      vals['ds' + n] = n === i ? 1.35 : 1;
+      vals['go' + n] = () => this.goTo(n);
+    }
+    return vals;
+  }
+}
+</script>
+</body>
+</html>

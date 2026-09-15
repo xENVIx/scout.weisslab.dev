@@ -1,34 +1,301 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-	<title>In Memory of my dog Scout</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="only light" />
+<meta name="darkreader-lock" />
+<meta name="supported-color-schemes" content="light" />
+<title>In Memory of my dog Scout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..600;1,6..72,200..600&family=Karla:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: only light;
+    --ink: #2B211B;
+    --ink-strong: #241A14;
+    --ink-soft: #4A3B31;
+    --ink-mute: #6B5748;
+    --paper: #FAF4EA;
+    --rule: #E5D6C0;
+    --edge: #DBC8AE;
+    --accent: #A8571F;
+    --accent-dark: #8F4818;
+    --serif: Newsreader, Georgia, "Times New Roman", serif;
+    --sans: Karla, system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html {
+    margin: 0; padding: 0;
+    background-color: #FAF4EA !important;
+  }
+  body {
+    margin: 0; padding: 0;
+    min-height: 100vh;
+    background-color: #FAF4EA !important;
+    color: var(--ink);
+    font-family: var(--serif);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  a { color: var(--accent); text-decoration-color: rgba(168,87,31,.35); text-underline-offset: 3px; }
+  a:hover { color: #7C3D12; text-decoration-color: rgba(124,61,18,.8); }
+  img, video { display: block; max-width: 100%; }
+
+  section, header, footer, .hero-bg, .band { background-color: #FAF4EA; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 clamp(20px, 5vw, 56px); }
+  .narrow { max-width: 720px; margin: 0 auto; padding: 0 clamp(20px, 5vw, 40px); }
+  .mid { max-width: 1000px; margin: 0 auto; padding: 0 clamp(20px, 5vw, 48px); }
+
+  .eyebrow {
+    font-family: var(--sans);
+    font-size: 12px; font-weight: 600;
+    letter-spacing: .22em; text-transform: uppercase;
+    color: var(--accent-dark);
+  }
+  .label {
+    font-family: var(--sans);
+    font-size: 13px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-mute);
+  }
+
+  .hero-bg { background-color: #FAF4EA; }
+  .hero {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: clamp(28px, 5vw, 64px);
+    align-items: center;
+    padding-top: clamp(28px, 6vw, 72px);
+    padding-bottom: clamp(40px, 7vw, 88px);
+  }
+  .hero h1 {
+    margin: clamp(14px, 2.5vw, 26px) 0 0;
+    font-size: clamp(76px, 15vw, 168px);
+    line-height: .82; font-weight: 300;
+    letter-spacing: -.035em; color: var(--ink-strong);
+  }
+  .hero-rule { margin-top: clamp(20px, 3vw, 34px); display: flex; align-items: center; gap: 16px; }
+  .hero-rule span.line { height: 1px; width: clamp(36px, 8vw, 72px); background: var(--edge); }
+  .hero blockquote {
+    margin: clamp(22px, 3.5vw, 36px) 0 0;
+    font-size: clamp(21px, 2.4vw, 27px); line-height: 1.5;
+    font-style: italic; font-weight: 300; color: var(--ink-soft);
+    max-width: 30ch; text-wrap: pretty;
+  }
+  .frame { position: relative; }
+  .frame::before {
+    content: ""; position: absolute;
+    inset: clamp(14px,3vw,26px) calc(-1 * clamp(10px,2vw,20px)) calc(-1 * clamp(14px,3vw,26px)) clamp(10px,2vw,20px);
+    border: 1px solid #E2D2BC; border-radius: 4px;
+  }
+  .frame img {
+    position: relative; width: 100%;
+    aspect-ratio: 4 / 5; object-fit: cover; object-position: center 30%;
+    background-color: #FAF4EA; border-radius: 3px;
+  }
+
+  .hairline { height: 1px; background: linear-gradient(90deg, rgba(217,196,166,0) 0%, #D9C4A6 50%, rgba(217,196,166,0) 100%); }
+
+  .dedication { padding: clamp(52px, 9vw, 112px) 0; }
+  .dedication p:first-child {
+    margin: 0; font-size: clamp(22px, 2.6vw, 29px); line-height: 1.62;
+    font-weight: 300; color: #33271F; text-wrap: pretty;
+  }
+  .dedication p:first-child::first-letter {
+    font-size: 3.4em; line-height: .8; float: left;
+    padding: .06em .18em 0 0; color: var(--accent); font-weight: 300;
+  }
+  .dedication p + p {
+    margin: clamp(26px, 4vw, 40px) 0 0;
+    font-size: clamp(19px, 2.1vw, 23px); line-height: 1.72;
+    font-weight: 300; color: var(--ink-soft); text-wrap: pretty;
+  }
+
+  .band { background-color: #FAF4EA; border-top: 1px solid var(--rule); }
+  .band-inner, .section { padding-top: clamp(44px, 7vw, 88px); padding-bottom: clamp(44px, 7vw, 88px); }
+  .head {
+    display: flex; flex-wrap: wrap; align-items: baseline;
+    justify-content: space-between; gap: 12px 20px;
+    margin-bottom: clamp(22px, 3.5vw, 34px);
+  }
+  .head h2 {
+    margin: 0; font-size: clamp(30px, 4.4vw, 46px);
+    font-weight: 300; letter-spacing: -.02em; color: var(--ink-strong);
+  }
+
+  /* ---- slideshow (markup in slideshow.html, behaviour in slideshow.js) ---- */
+  #slideshow-stage {
+    position: relative; width: 100%; aspect-ratio: 3 / 2;
+    background-color: #FAF4EA; border: 1px solid var(--rule); border-radius: 3px;
+    overflow: hidden; touch-action: pan-y;
+  }
+  #slideshow-stage img {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    opacity: 0; transition: opacity 900ms cubic-bezier(.4,0,.2,1);
+  }
+  #slideshow-stage img.is-on { opacity: 1; }
+  .ss-controls {
+    margin-top: clamp(18px, 2.6vw, 26px);
+    display: flex; align-items: center; justify-content: center;
+    gap: clamp(16px, 3vw, 28px); flex-wrap: wrap;
+  }
+  .ss-arrow {
+    width: 48px; height: 48px; flex: none;
+    display: grid; place-items: center;
+    border: 1px solid var(--edge); border-radius: 999px;
+    background: var(--paper); color: var(--ink-mute); cursor: pointer;
+    transition: background 200ms, color 200ms, border-color 200ms, transform 200ms;
+  }
+  .ss-arrow:hover { background: var(--accent); border-color: var(--accent); color: #FFF8EC; }
+  .ss-arrow:first-child:hover { transform: translateX(-2px); }
+  .ss-arrow:last-child:hover { transform: translateX(2px); }
+  .ss-dots { display: flex; align-items: center; gap: 12px; }
+  .ss-dots button {
+    width: 22px; height: 22px; padding: 0; flex: none;
+    display: grid; place-items: center;
+    border: none; background: none; cursor: pointer;
+  }
+  .ss-dots button i {
+    display: block; width: 8px; height: 8px; border-radius: 999px;
+    background: #CDB79A; transition: background 300ms, transform 300ms;
+  }
+  .ss-dots button[aria-current="true"] i { background: var(--accent); transform: scale(1.35); }
+  .ss-count { font-family: var(--sans); font-size: 12px; font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-mute); }
+  .ss-hint { margin: clamp(14px,2vw,20px) 0 0; text-align: center; font-family: var(--sans); font-size: 13px; color: var(--ink-mute); }
+
+  /* ---- video ---- */
+  .video-shell {
+    position: relative; width: 100%; aspect-ratio: 16 / 9;
+    background-color: #FAF4EA; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden;
+  }
+  .video-shell video { width: 100%; height: 100%; object-fit: contain; background-color: #FAF4EA; }
+  .video-missing {
+    position: absolute; inset: 0; display: none;
+    place-items: center; padding: 24px; text-align: center; background-color: #FAF4EA;
+  }
+  .video-shell.is-empty .video-missing { display: grid; }
+  .video-missing p { margin: 0; font-size: clamp(19px,2.2vw,24px); font-weight: 300; color: var(--ink-soft); }
+  .video-missing small {
+    display: block; margin: 10px auto 0; max-width: 46ch;
+    font-family: var(--sans); font-size: 14px; line-height: 1.6;
+    color: var(--ink-mute);
+  }
+  .video-missing code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .caption {
+    margin: clamp(16px,2.4vw,22px) 0 0;
+    font-size: clamp(18px,2vw,21px); line-height: 1.7;
+    font-weight: 300; font-style: italic; color: var(--ink-soft);
+    max-width: 52ch; text-wrap: pretty;
+  }
+
+  footer { border-top: 1px solid var(--rule); background-color: #FAF4EA; }
+  footer .mid { padding: clamp(40px,6vw,72px) clamp(20px,5vw,48px); text-align: center; }
+  footer .name { font-size: clamp(26px,3.6vw,38px); font-weight: 300; font-style: italic; color: #33271F; }
+  footer .eyebrow { margin-top: 14px; }
+
+  @media (max-width: 640px) {
+    .frame img { aspect-ratio: 4 / 4.4; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #slideshow-stage img { transition: none; }
+  }
+
+  /* Re-assert the light palette if anything tries to serve a dark treatment. */
+  @media (prefers-color-scheme: dark) {
+    html, body { background-color: #FAF4EA; color: #2B211B; }
+    .hero-bg { background-color: #FAF4EA; }
+    .band, footer, .hero-bg, #slideshow-stage, .video-shell, .video-missing { background-color: #FAF4EA; }
+    .video-missing p { color: #4A3B31; }
+    .video-missing small { color: #6B5748; }
+    .dedication p:first-child { color: #33271F; }
+    .dedication p + p, .caption, .hero blockquote { color: #4A3B31; }
+    .head h2, .hero h1 { color: #241A14; }
+    .label, .ss-count, .ss-hint { color: #6B5748; }
+    .eyebrow { color: #8F4818; }
+  }
+</style>
 </head>
 <body>
-	<div style="height: 100px;"></div>
-	<h1 style="text-align: center;">In Memory of Scout</h1>
 
-	<div style="margin: 0 200px; text-align: justify; font-size: 18px;">
-	    This page is dedicated to my dog Scout.  He was a huge part of my life, even if he was just a dog, and I felt like he deserved some sort of recognition.  He mattered to me, and I just want that to be known.<br><br>
-	    Scout, you are sorely missed by everyone who had the pleasure of meeting you.  You left a mark on everyone that I don't think will be forgotten.  I just wish you could know how much we all wanted you to stay around longer.  I tried to give you the best life I could buddy, and you will live on through me forever, you helped me become the person I am today.<br><br>
-	    Rest well, my scouty boy.
-	</div>
-	<!--<div style="margin: 0 200px; text-align: center;">
-		<img src="/media/pictures/scout_stick.jpg" alt="Scout">
-	</div>-->
-	<div id="slideshow-container"></div>
+<div class="hero-bg">
+  <header class="wrap hero">
+    <div>
+      <div class="eyebrow">In loving memory</div>
+      <h1>Scout</h1>
+      <div class="hero-rule"><span class="line"></span><span class="label">A good boy, always</span></div>
+      <blockquote>Rest well, my scouty boy.</blockquote>
+    </div>
+    <div class="frame">
+      <img src="media/pictures/slideshow/scout_stick.jpg" alt="Scout holding a stick" />
+    </div>
+  </header>
+</div>
 
-	<script>
-		fetch("slideshow.html")
-			.then(response => response.text())
-			.then(html => {
-				document.getElementById("slideshow-container").innerHTML = html;
+<div class="hairline"></div>
 
-				const script = document.createElement("script");
-				script.src = "slideshow.js";
-				document.body.appendChild(script);
-			});
-	</script>
+<section class="narrow dedication">
+  <p>This page is dedicated to my dog Scout. He was a huge part of my life, even if he was just a dog, and I felt like he deserved some sort of recognition. He mattered to me, and I just want that to be known.</p>
+  <p>Scout, you are sorely missed by everyone who had the pleasure of meeting you. You left a mark on everyone that I don't think will be forgotten. I just wish you could know how much we all wanted you to stay around longer. I tried to give you the best life I could buddy, and you will live on through me forever, you helped me become the person I am today.</p>
+</section>
+
+<div class="band">
+  <div class="mid band-inner">
+    <div class="head">
+      <h2>Him, in pictures</h2>
+      <div class="ss-count" id="slideshow-count">&nbsp;</div>
+    </div>
+    <div id="slideshow-container"></div>
+  </div>
+</div>
+
+<section class="mid section">
+  <div class="head">
+    <h2>The catch</h2>
+    <span class="label">Slow motion</span>
+  </div>
+  <div class="video-shell" id="video-shell">
+    <video id="frisbee" src="media/videos/scout-frisbee.mp4" playsinline loop muted autoplay controls preload="metadata"></video>
+    <div class="video-missing">
+      <div>
+        <p>The frisbee clip goes here.</p>
+        <small>Drop the slow&#8209;mo file in as <code>media/videos/scout-frisbee.mp4</code> and it plays right here, looping and silent.</small>
+      </div>
+    </div>
+  </div>
+  <p class="caption">He never once doubted that the frisbee was coming back.</p>
+</section>
+
+<footer>
+  <div class="mid">
+    <div class="name">Scout</div>
+    <div class="eyebrow">Sorely missed</div>
+  </div>
+</footer>
+
+<script>
+  // Load the slideshow markup, then its behaviour (same pattern as before).
+  fetch("slideshow.html")
+    .then(function (r) { return r.text(); })
+    .then(function (html) {
+      document.getElementById("slideshow-container").innerHTML = html;
+      var s = document.createElement("script");
+      s.src = "slideshow.js";
+      document.body.appendChild(s);
+    });
+
+  // Hide the player behind a plate until the video file actually exists.
+  (function () {
+    var v = document.getElementById("frisbee");
+    var shell = document.getElementById("video-shell");
+    function empty() { shell.classList.add("is-empty"); v.removeAttribute("controls"); }
+    v.addEventListener("error", empty);
+    if (v.networkState === 3) empty();
+  })();
+</script>
 
 </body>
-
-
 </html>

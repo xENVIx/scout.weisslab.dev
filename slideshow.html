@@ -1,11 +1,13 @@
-<div style="text-align: center;">
+<div id="slideshow-stage" aria-roledescription="carousel" aria-label="Photos of Scout"></div>
 
-    <button onclick="previousImage()">&#10094;</button>
-
-    <img id="slideshow"
-		 alt="Scout"
-		 style="max-width: 100%;">
-
-    <button onclick="nextImage()">&#10095;</button>
-
+<div class="ss-controls">
+  <button class="ss-arrow" type="button" onclick="previousImage()" aria-label="Previous photo">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 2.5 4.5 8l5.5 5.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <div class="ss-dots" id="slideshow-dots"></div>
+  <button class="ss-arrow" type="button" onclick="nextImage()" aria-label="Next photo">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 2.5 11.5 8 6 13.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
 </div>
+
+<p class="ss-hint">Arrow keys, or swipe on a phone.</p>
