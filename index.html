@@ -84,7 +84,7 @@
     font-style: italic; font-weight: 300; color: var(--ink-soft);
     max-width: 30ch; text-wrap: pretty;
   }
-  .frame { position: relative; }
+  .frame { position: relative; width: min(100%, 300px); margin-inline: auto; }
   .frame::before {
     content: ""; position: absolute;
     inset: clamp(14px,3vw,26px) calc(-1 * clamp(10px,2vw,20px)) calc(-1 * clamp(14px,3vw,26px)) clamp(10px,2vw,20px);
@@ -92,7 +92,7 @@
   }
   .frame img {
     position: relative; width: 100%;
-    aspect-ratio: 4 / 5; object-fit: cover; object-position: center 30%;
+    aspect-ratio: 499 / 934; object-fit: cover; object-position: center center;
     background-color: #FAF4EA; border-radius: 3px;
   }
 
@@ -198,7 +198,8 @@
   footer .eyebrow { margin-top: 14px; }
 
   @media (max-width: 640px) {
-    .frame img { aspect-ratio: 4 / 4.4; }
+    .frame img { aspect-ratio: 499 / 934; }
+    .frame { width: min(100%, 260px); }
   }
   @media (prefers-reduced-motion: reduce) {
     #slideshow-stage img { transition: none; }

@@ -3,14 +3,13 @@ branch: main
 
 ## Last sync
 
-date: 2026-09-15T18:27:10Z
+date: 2026-09-15T18:57:56Z
 
 ### Updated in this project
 
-- Restyled `index.html`: warm cream palette, Newsreader/Karla type, hero portrait, dedication text unchanged.
-- Rebuilt the slideshow (`slideshow.html` + `slideshow.js`) with crossfades, dots, keyboard and swipe, and `object-fit: contain` so photos are never cropped.
-- Kept the directory-listing auto-discovery for `media/pictures/slideshow/`, plus a hardcoded fallback list.
-- Added a "The catch" section for the slow-motion frisbee video at `media/videos/scout-frisbee.mp4`.
+- Pulled your repo copy of `index.html` down verbatim; the only change is the hero photo's fit.
+- Hero image now `object-fit: contain` in a 3/4 frame, so `my_scouty_boy.jpg` is shown whole with no crop at the top of his head.
+- Your commented-out headings, blockquote, footer, and the `scout_good_catch.mp4` path are left exactly as you had them.
 
 ## Screen map
 
@@ -18,4 +17,10 @@ date: 2026-09-15T18:27:10Z
 | --- | --- |
 | Memorial page | `index.html` |
 | Photo slideshow | `slideshow.html`, `slideshow.js` |
-| Photos | `media/pictures/slideshow/*` |
+| Hero portrait | `media/pictures/my_scouty_boy.jpg` |
+| Slideshow photos | `media/pictures/slideshow/*` |
+
+## Sync history
+
+- 2026-09-15T18:55:45Z — read repo at tree `2f6bec9da1d2`; copied `my_scouty_boy.jpg`.
+- 2026-09-15T18:27:10Z — initial restyle; rebuilt `index.html`, `slideshow.html`, `slideshow.js`.
