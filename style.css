@@ -16,6 +16,7 @@
 html {
   margin: 0; padding: 0;
   background-color: var(--paper) !important;
+  scroll-behavior: smooth;
 }
 body {
   margin: 0; padding: 0;
@@ -46,6 +47,47 @@ section, header, footer, .hero-bg, .band { background-color: var(--paper); }
   font-family: var(--sans);
   font-size: 13px; letter-spacing: .16em; text-transform: uppercase;
   color: var(--ink-mute);
+}
+
+/* ---- navigation ----
+   .topnav sits in normal flow and scrolls away with the hero. Once it's
+   scrolled out of view (tracked in script.js via IntersectionObserver),
+   .sidenav takes over: the same bar, rotated — writing-mode flips its
+   layout axis and its text together, so it becomes a full-height strip
+   docked on the left instead of a full-width strip docked on top. It
+   slides back out once .topnav is back on screen. */
+.topnav, .sidenav {
+  display: flex; justify-content: center; flex-wrap: wrap;
+  gap: clamp(20px, 4vw, 48px);
+  background: var(--paper);
+}
+.topnav {
+  padding: 18px clamp(20px, 5vw, 48px);
+  border-bottom: 1px solid var(--rule);
+}
+.topnav a, .sidenav a {
+  font-family: var(--sans);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: .18em; text-transform: uppercase;
+  color: var(--ink-mute); text-decoration: none; white-space: nowrap;
+  transition: color 200ms ease;
+}
+.topnav a:hover, .sidenav a:hover { color: var(--accent); }
+
+.sidenav {
+  position: fixed; top: 0; left: 0; height: 100vh; z-index: 500;
+  align-items: center;
+  padding: clamp(20px, 5vw, 48px) 18px;
+  writing-mode: vertical-rl;
+  border-right: 1px solid var(--rule);
+  box-shadow: 8px 0 28px rgba(64,42,25,.15);
+  transform: translateX(-100%);
+  transition: transform 320ms cubic-bezier(.2,.7,.3,1);
+}
+.sidenav.visible { transform: translateX(0); }
+@media (max-width: 640px) {
+  .sidenav { padding: 14px 12px; gap: clamp(14px, 4vw, 28px); }
+  .sidenav a { font-size: 11px; letter-spacing: .14em; }
 }
 
 .hero {
@@ -126,6 +168,12 @@ section, header, footer, .hero-bg, .band { background-color: var(--paper); }
 }
 #slideshow-stage img.is-on,
 #slideshow-stage video.is-on { opacity: 1; }
+/* Only the visible slide should receive clicks — otherwise a stacked,
+   invisible layer underneath silently steals the click. */
+#slideshow-stage img,
+#slideshow-stage video { pointer-events: none; }
+#slideshow-stage img.is-on,
+#slideshow-stage video.is-on { pointer-events: auto; }
 #slideshow-stage .ss-empty {
   position: absolute; inset: 0; display: grid; place-items: center;
   padding: 24px; text-align: center;
@@ -184,6 +232,47 @@ section, header, footer, .hero-bg, .band { background-color: var(--paper); }
   font-weight: 300; font-style: italic; color: var(--ink-soft);
   max-width: 52ch; text-wrap: pretty;
 }
+
+/* ---- lightbox ----
+   .lightbox always scrolls; .lightbox-viewport always centers its
+   content via flex. When the image is smaller than the viewport, the
+   viewport (min-width/height: 100%) matches the screen and the flex
+   centering puts it in the middle. When zoomed past that, the viewport
+   grows to fit the image and .lightbox scrolls to reveal it — the image
+   never has to jump between "centered" and "pinned to a corner" layouts. */
+.lightbox {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(20,15,10,.92);
+  overflow: auto;
+}
+.lightbox[hidden] { display: none; }
+.lightbox-viewport {
+  min-width: 100%; min-height: 100%;
+  box-sizing: border-box; padding: 32px;
+  display: flex; align-items: center; justify-content: center;
+}
+.lightbox img {
+  max-width: 100%; max-height: calc(100vh - 64px);
+  display: block;
+  box-shadow: 0 30px 80px rgba(0,0,0,.5);
+  border-radius: 2px;
+  -webkit-user-drag: none; user-select: none;
+}
+.lightbox.zoomed img {
+  max-width: none; max-height: none;
+  height: auto;
+  box-shadow: none; border-radius: 0;
+  cursor: grab;
+}
+.lightbox.zoomed img.dragging { cursor: grabbing; }
+.lightbox-close {
+  position: fixed; top: 16px; right: 16px; z-index: 1001;
+  width: 40px; height: 40px; display: grid; place-items: center;
+  border: 1px solid rgba(250,244,234,.35); border-radius: 999px;
+  background: rgba(0,0,0,.4); color: var(--paper);
+  font-size: 22px; line-height: 1; cursor: pointer;
+}
+.lightbox-close:hover { background: rgba(0,0,0,.6); }
 
 footer { border-top: 1px solid var(--rule); }
 footer .mid { padding: clamp(40px,6vw,72px) clamp(20px,5vw,48px); text-align: center; }

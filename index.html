@@ -14,6 +14,17 @@
 </head>
 <body>
 
+<nav class="topnav" id="topnav" aria-label="Section navigation">
+  <a href="#dedication">Memorial</a>
+  <a href="#gallery">Photos</a>
+  <a href="#catch">The Catch</a>
+</nav>
+<nav class="sidenav" id="sidenav" aria-label="Section navigation">
+  <a href="#dedication">Memorial</a>
+  <a href="#gallery">Photos</a>
+  <a href="#catch">The Catch</a>
+</nav>
+
 <div class="hero-bg">
   <header class="wrap hero">
     <div>
@@ -28,14 +39,14 @@
 
 <div class="hairline"></div>
 
-<section class="narrow dedication">
+<section class="narrow dedication" id="dedication">
   <p>This page is dedicated to my dog, Scout. He was a huge part of my life, even if he was just a dog, and I felt like he deserved a space to commemorate his life.</p>
   <p>I got Scout at 2 months old, when he was a little tiny puppy. It did not take long to discover his love for playing fetch, particularly with a frisbee. He would spend countless hours running up and down my parents' back yard just chasing the frisbee, until he was beyond worn out.</p>
   <p>Scout, you are sorely missed by everyone who had the pleasure of meeting you. You will live on through me forever, you helped me become the person I am today.</p>
   <p>Rest well, scouty boy.</p>
 </section>
 
-<div class="band">
+<div class="band" id="gallery">
   <div class="mid band-inner">
     <div class="head">
       <h2></h2>
@@ -57,7 +68,7 @@
   </div>
 </div>
 
-<section class="mid section">
+<section class="mid section" id="catch">
   <div class="head">
     <!--<h2>The catch</h2>-->
     <!--<span class="label">Slow motion</span>-->
@@ -80,6 +91,13 @@
     <div class="eyebrow">Sorely missed</div>
   </div>
 </footer>-->
+
+<div class="lightbox" id="lightbox" hidden>
+  <button class="lightbox-close" id="lightbox-close" type="button" aria-label="Close">&times;</button>
+  <div class="lightbox-viewport">
+    <img id="lightbox-img" alt="" />
+  </div>
+</div>
 
 <script src="script.js"></script>
 
