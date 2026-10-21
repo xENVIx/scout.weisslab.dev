@@ -6,15 +6,165 @@
    dropping a new file into the folder is all that's needed to add it.
 */
 
-/* Section nav: .sidenav slides in once .topnav scrolls out of view. */
-(function nav() {
-  var topnav = document.getElementById("topnav");
+/* Scenes: the page is four full-screen .scene layers (intro, dedication,
+   slideshow, the catch) and scrolling fades between them instead of moving
+   the page. A scene taller than the screen scrolls normally inside itself
+   and only fades once you're at its top or bottom edge. Wheel, touch swipe,
+   keyboard and the nav links all go through go(). .sidenav slides in on
+   every scene after the intro (the intro has .topnav instead). */
+(function scenes() {
+  var list = Array.prototype.slice.call(document.querySelectorAll(".scene"));
   var sidenav = document.getElementById("sidenav");
-  if (!topnav || !sidenav || !("IntersectionObserver" in window)) return;
-  var io = new IntersectionObserver(function (entries) {
-    sidenav.classList.toggle("visible", !entries[0].isIntersecting);
+  var lightbox = document.getElementById("lightbox");
+  var frisbee = document.getElementById("frisbee");
+  if (list.length < 2) return;
+
+  var SHIFT = 24;          // px of vertical drift during the fade
+  var LOCK_MS = 1000;      // ignore further input while a fade runs
+  var SETTLE_MS = 160;     // a scene must sit still this long at its edge before fading
+  var current = 0;
+  var lockUntil = 0;
+  var lastScrollAt = 0;
+
+  document.documentElement.classList.add("scenes");
+
+  function atTop(el) { return el.scrollTop <= 1; }
+  function atBottom(el) { return el.scrollTop + el.clientHeight >= el.scrollHeight - 2; }
+  function busy() { return lightbox && !lightbox.hidden; }
+
+  function setShift(el, px) { el.style.setProperty("--shift", px + "px"); }
+
+  function activate(i, dir, instant) {
+    var from = list[current];
+    var to = list[i];
+
+    // Park the incoming scene on the side it arrives from, without animating.
+    to.style.transition = "none";
+    setShift(to, dir >= 0 ? SHIFT : -SHIFT);
+    to.scrollTop = dir >= 0 ? 0 : to.scrollHeight;
+    void to.offsetWidth;
+    to.style.transition = instant ? "none" : "";
+
+    if (from !== to) {
+      setShift(from, dir >= 0 ? -SHIFT : SHIFT);
+      from.classList.remove("is-active");
+    }
+    to.classList.add("is-active");
+    if (instant) { void to.offsetWidth; to.style.transition = ""; }
+
+    current = i;
+    lastScrollAt = 0;
+    if (sidenav) sidenav.classList.toggle("visible", i > 0);
+
+    var anchor = to.getAttribute("data-anchor");
+    try { history.replaceState(null, "", anchor ? "#" + anchor : location.pathname + location.search); } catch (e) {}
+
+    // The catch clip only plays (and only downloads) while its scene is up.
+    if (frisbee && !frisbee.closest(".scene").classList.contains("is-active")) frisbee.pause();
+    else if (frisbee) { var p = frisbee.play(); if (p && p.catch) p.catch(function () {}); }
+  }
+
+  function go(dir) {
+    var i = current + dir;
+    if (i < 0 || i >= list.length) return false;
+    lockUntil = Date.now() + LOCK_MS;
+    activate(i, dir, false);
+    return true;
+  }
+
+  function goToEl(el) {
+    var scene = el && el.closest(".scene");
+    var i = list.indexOf(scene);
+    if (i < 0 || i === current) return;
+    lockUntil = Date.now() + LOCK_MS;
+    activate(i, i > current ? 1 : -1, false);
+  }
+
+  list.forEach(function (el) {
+    el.addEventListener("scroll", function () { lastScrollAt = Date.now(); }, { passive: true });
   });
-  io.observe(topnav);
+
+  // Start on the scene named in the URL hash, if any.
+  var start = 0;
+  if (location.hash) {
+    var target = document.getElementById(location.hash.slice(1));
+    var s = target && list.indexOf(target.closest(".scene"));
+    if (s > 0) start = s;
+  }
+  list.forEach(function (el) { el.style.transition = "none"; });
+  activate(start, 1, true);
+  list.forEach(function (el) { void el.offsetWidth; el.style.transition = ""; });
+
+  window.addEventListener("wheel", function (e) {
+    if (busy()) return;
+    var now = Date.now();
+    if (now < lockUntil) {
+      // Trackpad momentum keeps firing after a fade starts; hold the lock
+      // until that stream of events dies down.
+      lockUntil = Math.max(lockUntil, now + 250);
+      e.preventDefault();
+      return;
+    }
+    if (Math.abs(e.deltaY) < 4) return;
+    var el = list[current];
+    var dir = e.deltaY > 0 ? 1 : -1;
+    var edge = dir > 0 ? atBottom(el) : atTop(el);
+    if (!edge || now - lastScrollAt < SETTLE_MS) return; // let the scene scroll natively
+    e.preventDefault();
+    go(dir);
+  }, { passive: false });
+
+  var touchX = 0, touchY = 0, touchTop = false, touchBottom = false;
+  window.addEventListener("touchstart", function (e) {
+    var el = list[current];
+    touchX = e.touches[0].clientX;
+    touchY = e.touches[0].clientY;
+    touchTop = atTop(el);
+    touchBottom = atBottom(el);
+  }, { passive: true });
+  window.addEventListener("touchend", function (e) {
+    if (busy() || Date.now() < lockUntil) return;
+    var dx = e.changedTouches[0].clientX - touchX;
+    var dy = touchY - e.changedTouches[0].clientY; // > 0 means swiped up (toward the next scene)
+    if (Math.abs(dy) < 50 || Math.abs(dy) < Math.abs(dx) * 1.2) return; // too short, or a sideways slideshow swipe
+    if (dy > 0 && touchBottom) go(1);
+    else if (dy < 0 && touchTop) go(-1);
+  }, { passive: true });
+
+  document.addEventListener("keydown", function (e) {
+    if (busy() || e.altKey || e.ctrlKey || e.metaKey) return;
+    var tag = e.target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "VIDEO") return;
+    var el = list[current];
+    var page = el.clientHeight * 0.85;
+    var dir = 0, step = 0;
+    switch (e.key) {
+      case "ArrowDown": dir = 1; step = 60; break;
+      case "ArrowUp": dir = -1; step = 60; break;
+      case "PageDown": dir = 1; step = page; break;
+      case "PageUp": dir = -1; step = page; break;
+      case " ":
+        if (tag === "BUTTON" || tag === "A") return;
+        dir = e.shiftKey ? -1 : 1; step = page; break;
+      case "Home": e.preventDefault(); if (current) { lockUntil = Date.now() + LOCK_MS; activate(0, -1, false); } return;
+      case "End": e.preventDefault(); if (current < list.length - 1) { lockUntil = Date.now() + LOCK_MS; activate(list.length - 1, 1, false); } return;
+      default: return;
+    }
+    e.preventDefault();
+    if (Date.now() < lockUntil) return;
+    if (dir > 0 ? atBottom(el) : atTop(el)) go(dir);
+    else el.scrollBy({ top: dir * step, behavior: "smooth" });
+  });
+
+  // Nav links fade to their scene instead of jumping.
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="#"]');
+    if (!a) return;
+    var target = document.getElementById(a.getAttribute("href").slice(1));
+    if (!target || !target.closest(".scene")) return;
+    e.preventDefault();
+    goToEl(target);
+  });
 })();
 
 (function slideshow() {

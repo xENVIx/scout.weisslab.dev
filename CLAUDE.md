@@ -14,13 +14,17 @@ A static, single-page memorial site for Scout (a dog), served live at inlovingme
 Only these files make up the live page:
 - `index.html` — all markup (hero, dedication, `#gallery` slideshow, `#catch` video, lightbox).
 - `style.css` — all styling (light-only; Newsreader + Karla from Google Fonts).
-- `script.js` — all behaviour, as three IIFEs: section nav, slideshow + lightbox, frisbee video fallback.
+- `script.js` — all behaviour, as three IIFEs: scenes + nav, slideshow + lightbox, frisbee video fallback.
 - `media/` — `media/pictures/my_scouty_boy.jpg` (hero), `media/slideshow/*` (slides), `media/videos/*`.
 
 Not used by `index.html` (artifacts of earlier tooling/iterations — don't edit them expecting site changes):
 - `slideshow.html`, `slideshow.js` — older standalone slideshow reading `media/pictures/slideshow/`, which no longer exists.
 - `Scout.dc.html`, `support.js`, `image-slot.js`, `.image-slots.state.json`, `.thumbnail` — an exported design-tool ("dc-runtime"/omelette) mockup; `support.js` is generated code.
 - `github.md` — sync notes from that design tool; its paths are partly out of date.
+
+## Scenes (fade between sections)
+
+The page doesn't scroll as one document. Each of the four parts (intro, dedication, slideshow, the catch) is wrapped in a `.scene` div in `index.html`. `script.js` adds `.scenes` to `<html>`, which turns every scene into a fixed full-screen layer, with only `.is-active` visible. Wheel, touch swipe, keyboard and nav links fade to the next or previous scene. A scene taller than the screen scrolls inside itself and only fades once it reaches its top or bottom. All scene CSS is scoped under `.scenes`, so without JS the page falls back to normal scrolling. When adding a section, wrap it in `<div class="scene" data-anchor="<id>">`. The `#catch` video has no `autoplay`; the scene code plays it on entering that scene and pauses it on leaving.
 
 ## Slideshow mechanism
 

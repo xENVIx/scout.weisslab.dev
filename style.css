@@ -80,14 +80,46 @@ section, header, footer, .hero-bg, .band { background-color: var(--paper); }
   padding: clamp(20px, 5vw, 48px) 18px;
   writing-mode: vertical-rl;
   border-right: 1px solid var(--rule);
-  box-shadow: 8px 0 28px rgba(64,42,25,.15);
   transform: translateX(-100%);
-  transition: transform 320ms cubic-bezier(.2,.7,.3,1);
+  transition: transform 320ms cubic-bezier(.2,.7,.3,1), box-shadow 320ms;
 }
-.sidenav.visible { transform: translateX(0); }
+/* Shadow only while shown, so it doesn't peek in from off-screen. */
+.sidenav.visible { transform: translateX(0); box-shadow: 8px 0 28px rgba(64,42,25,.15); }
 @media (max-width: 640px) {
   .sidenav { padding: 14px 12px; gap: clamp(14px, 4vw, 28px); }
   .sidenav a { font-size: 11px; letter-spacing: .14em; }
+}
+
+/* ---- scenes ----
+   script.js adds .scenes to <html>; without it the page scrolls as one
+   normal document. With it, each .scene is a full-screen layer and only
+   the active one is shown. A scene taller than the screen scrolls inside
+   itself; scrolling past either end fades to the neighbouring scene. The
+   outgoing scene fades first, then the incoming one fades in after a delay,
+   so the two never overlap. --shift (set in script.js) is the direction of
+   the slight drift. */
+html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+.scenes .hairline { display: none; }
+.scenes .scene {
+  position: fixed; inset: 0; z-index: 1;
+  display: flex; flex-direction: column;
+  overflow-y: auto; overscroll-behavior: contain;
+  background-color: var(--paper);
+  opacity: 0; visibility: hidden;
+  transform: translateY(var(--shift, 24px));
+  transition: opacity 450ms ease, transform 450ms ease, visibility 0s linear 450ms;
+}
+.scenes .scene.is-active {
+  z-index: 2; opacity: 1; visibility: visible; transform: none;
+  transition: opacity 650ms ease 380ms, transform 650ms cubic-bezier(.2,.7,.3,1) 380ms, visibility 0s;
+}
+.scenes .scene > * { flex: none; }
+.scenes .scene > :last-child { margin-block: auto; }
+.scenes .band { border-top: 0; }
+/* Keep the whole slideshow (header, photo, controls) on one screen. */
+.scenes #slideshow-stage { max-height: calc(100vh - 340px); min-height: 200px; }
+@media (prefers-reduced-motion: reduce) {
+  .scenes .scene { transform: none !important; }
 }
 
 .hero {
@@ -182,7 +214,7 @@ section, header, footer, .hero-bg, .band { background-color: var(--paper); }
 .ss-controls {
   margin-top: clamp(18px, 2.6vw, 26px);
   display: flex; align-items: center; justify-content: center;
-  gap: clamp(16px, 3vw, 28px); flex-wrap: wrap;
+  gap: clamp(12px, 3vw, 28px);
 }
 .ss-arrow {
   width: 48px; height: 48px; flex: none;
@@ -194,7 +226,9 @@ section, header, footer, .hero-bg, .band { background-color: var(--paper); }
 .ss-arrow:hover { background: var(--accent); border-color: var(--accent); color: #FFF8EC; }
 .ss-arrow:first-child:hover { transform: translateX(-2px); }
 .ss-arrow:last-child:hover { transform: translateX(2px); }
-.ss-dots { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
+/* Arrows stay on one row; with many slides the dots wrap between them. */
+.ss-dots { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; justify-content: center; min-width: 0; }
+@media (max-width: 640px) { .ss-dots { gap: 4px 6px; } }
 .ss-dots button {
   width: 22px; height: 22px; padding: 0; flex: none;
   display: grid; place-items: center;
