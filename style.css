@@ -361,22 +361,21 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 .lightbox-close:hover { background: rgba(0,0,0,.6); }
 
 /* ---- scene clips ----
-   The transition into a scene with data-clip (script.js). The paper backdrop
-   hides both scenes; the clip sits in the middle at 75% opacity, cropped to
-   a square and faded out toward the edges in a circle. */
+   The transition into a scene with data-clip (script.js): it plays on the
+   bare paper background between the old scene fading out and the new one
+   fading in, in the middle at 75% opacity, cropped to a square and faded
+   out toward the edges in a circle. */
 .scene-clip {
   position: fixed; inset: 0; z-index: 700;
-  background-color: var(--paper);
   opacity: 0; visibility: hidden; pointer-events: none;
-  /* Fading out reveals the next scene, already in place underneath. */
-  transition: opacity 900ms ease, visibility 0s linear 900ms;
+  transition: opacity 700ms ease, visibility 0s linear 700ms;
 }
 .scene-clip.show { opacity: 1; visibility: visible; transition: opacity 600ms ease, visibility 0s; }
 .scene-clip { display: grid; place-items: center; }
 .scene-clip img, .scene-clip video {
   display: block; width: min(80vmin, 560px); aspect-ratio: 1;
   object-fit: cover; opacity: .75;
-  transform: scale(.94); transition: transform 900ms ease;
+  transform: scale(.94); transition: transform 700ms ease;
   -webkit-mask-image: radial-gradient(circle closest-side, #000 45%, transparent 100%);
   mask-image: radial-gradient(circle closest-side, #000 45%, transparent 100%);
 }

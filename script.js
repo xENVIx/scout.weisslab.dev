@@ -14,8 +14,8 @@
    every scene after the intro (the intro has .topnav instead).
 
    A scene with data-clip="<gif or video>" (and data-clip-ms, how long to
-   show it) uses that clip as the transition whenever you arrive at it: it
-   fills the screen, hiding both scenes, and input waits until it's done. */
+   show it) uses that clip as the transition whenever you arrive at it, in
+   place of the usual cross-fade; input waits until it's done. */
 (function scenes() {
   var list = Array.prototype.slice.call(document.querySelectorAll(".scene"));
   var sidenav = document.getElementById("sidenav");
@@ -26,13 +26,14 @@
   var SHIFT = 24;          // px of vertical drift during the fade
   var LOCK_MS = 1000;      // ignore further input while a fade runs
   var SETTLE_MS = 160;     // a scene must sit still this long at its edge before fading
-  var CLIP_DELAY_MS = 0;   // when the clip starts, relative to the fade
-  var CLIP_FADE_OUT_MS = 900; // matches .scene-clip's fade-out in style.css
+  var SCENE_OUT_MS = 450;  // a scene's fade-out, as in style.css
+  var SCENE_IN_MS = 650;   // a scene's fade-in, as in style.css
+  var CLIP_FADE_OUT_MS = 700; // .scene-clip's fade-out, as in style.css
   var current = 0;
   var lockUntil = 0;
   var lastScrollAt = 0;
   var reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var clip = null, clipTimers = [];
+  var clip = null, clipScene = null, clipTimers = [];
 
   document.documentElement.classList.add("scenes");
 
@@ -42,14 +43,17 @@
 
   function setShift(el, px) { el.style.setProperty("--shift", px + "px"); }
 
+  // Sequence: the old scene fades out to the paper background, the clip
+  // fades in from it, plays, fades back out, and only then does the new
+  // scene fade in (its fade-in is held back with an inline transition-delay).
   function stopClip() {
     clipTimers.forEach(clearTimeout);
     clipTimers = [];
     if (clip) clip.classList.remove("show");
+    if (clipScene) { clipScene.style.transitionDelay = ""; clipScene = null; }
   }
 
   function playClip(scene) {
-    stopClip();
     var src = scene.getAttribute("data-clip");
     if (!src || reduceMotion) return;
     if (!clip) {
@@ -58,24 +62,33 @@
       clip.setAttribute("aria-hidden", "true");
       document.body.appendChild(clip);
     }
-    // A fresh element each time so the clip starts from its first frame.
-    var isVideo = /\.(mp4|webm|mov|m4v)$/i.test(src);
-    var media = document.createElement(isVideo ? "video" : "img");
-    if (isVideo) { media.muted = true; media.playsInline = true; media.autoplay = true; }
-    else media.alt = "";
-    media.src = src;
-    clip.textContent = "";
-    clip.appendChild(media);
     var ms = Number(scene.getAttribute("data-clip-ms")) || 2000;
-    lockUntil = Math.max(lockUntil, Date.now() + CLIP_DELAY_MS + ms);
-    clipTimers.push(setTimeout(function () { clip.classList.add("show"); }, CLIP_DELAY_MS));
+    var sceneIn = SCENE_OUT_MS + ms; // when the new scene starts fading in
+    clipScene = scene;
+    scene.style.transitionDelay = sceneIn + "ms, " + sceneIn + "ms, 0s";
+    lockUntil = Math.max(lockUntil, Date.now() + sceneIn + SCENE_IN_MS);
+
+    clipTimers.push(setTimeout(function () {
+      // A fresh element each time so the clip starts from its first frame.
+      var isVideo = /\.(mp4|webm|mov|m4v)$/i.test(src);
+      var media = document.createElement(isVideo ? "video" : "img");
+      if (isVideo) { media.muted = true; media.playsInline = true; media.autoplay = true; }
+      else media.alt = "";
+      media.src = src;
+      clip.textContent = "";
+      clip.appendChild(media);
+      void clip.offsetWidth;
+      clip.classList.add("show");
+    }, SCENE_OUT_MS));
     // Start fading out early enough to be gone by the end of the clip.
-    clipTimers.push(setTimeout(stopClip, CLIP_DELAY_MS + Math.max(0, ms - CLIP_FADE_OUT_MS)));
+    clipTimers.push(setTimeout(function () { clip.classList.remove("show"); }, SCENE_OUT_MS + Math.max(0, ms - CLIP_FADE_OUT_MS)));
+    clipTimers.push(setTimeout(stopClip, sceneIn + SCENE_IN_MS));
   }
 
   function activate(i, dir, instant) {
     var from = list[current];
     var to = list[i];
+    stopClip();
 
     // Park the incoming scene on the side it arrives from, without animating.
     to.style.transition = "none";
@@ -88,10 +101,9 @@
       setShift(from, dir >= 0 ? -SHIFT : SHIFT);
       from.classList.remove("is-active");
     }
+    if (!instant && from !== to) playClip(to);
     to.classList.add("is-active");
     if (instant) { void to.offsetWidth; to.style.transition = ""; }
-
-    if (!instant && from !== to) playClip(to);
 
     current = i;
     lastScrollAt = 0;
