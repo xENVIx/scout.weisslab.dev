@@ -86,7 +86,7 @@ section, header, footer, .hero-bg, .band { background-color: var(--paper); }
 }
 .sidenav.visible { transform: translateX(0); }
 @media (max-width: 640px) {
-  .sidenav { padding: 14px 12px; gap: clamp(14px, 4vw, 28px); }
+  .sidenav { padding: 14px 7px; gap: clamp(14px, 4vw, 28px); }
   .sidenav a { font-size: 11px; letter-spacing: .14em; }
 }
 
