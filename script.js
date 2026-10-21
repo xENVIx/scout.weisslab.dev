@@ -1,11 +1,11 @@
 /* Scout page behaviour.
 
-   Slideshow: /media/slideshow/ is read via nginx's directory listing
-   (autoindex is on for that location in conf/nginx.conf). Every image
+   Slideshow: /media/ is read via nginx's directory listing
+   (autoindex is on for that location in the nginx config). Every image
    and video file found there is a candidate, ordered by filename. Two lists
    in the same folder (one filename per line, kept by /media-admin) pick from
-   them: hidden.txt names files not shown at all, and slideshow.txt names the
-   ones in the slideshow. The gallery grid is every shown image.
+   them: not_in_gallery.txt names images left out of the gallery grid (all
+   are in it otherwise), and slideshow.txt names the files in the slideshow.
 */
 
 /* Scenes: the page is four full-screen .scene layers (intro, dedication,
@@ -231,7 +231,7 @@
 })();
 
 (function slideshow() {
-  var DIR = "media/slideshow/";
+  var DIR = "media/";
   var AUTOPLAY_MS = 6000; // 0 disables autoplay
 
   var IMAGE_RE = /\.(jpe?g|png|gif|webp|avif)$/i;
@@ -268,9 +268,9 @@
       });
   }
 
-  var hidden = {}, inSlideshow = {};
-  Promise.all([fetchList("hidden.txt"), fetchList("slideshow.txt")])
-    .then(function (lists) { hidden = lists[0]; inSlideshow = lists[1]; return fetch(DIR, { cache: "no-cache" }); })
+  var notInGallery = {}, inSlideshow = {};
+  Promise.all([fetchList("not_in_gallery.txt"), fetchList("slideshow.txt")])
+    .then(function (lists) { notInGallery = lists[0]; inSlideshow = lists[1]; return fetch(DIR, { cache: "no-cache" }); })
     .then(function (r) { return r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status)); })
     .then(function (html) {
       var doc = new DOMParser().parseFromString(html, "text/html");
@@ -286,9 +286,7 @@
         return true;
       });
       files.sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }); });
-      files = files.filter(function (f) { return !hidden[f]; });
-
-      buildGrid(files.filter(function (f) { return IMAGE_RE.test(f); }));
+      buildGrid(files.filter(function (f) { return IMAGE_RE.test(f) && !notInGallery[f]; }));
       start(files.filter(function (f) { return inSlideshow[f]; }));
     })
     .catch(function (err) {
@@ -519,7 +517,7 @@
 })();
 
 /* Dedicated "the catch" clip: hide the player behind a plate until the
-   file actually exists at media/videos/scout_good_catch.mp4. */
+   file actually exists at media/scout_good_catch.mp4. */
 (function frisbeeVideo() {
   var v = document.getElementById("frisbee");
   var shell = document.getElementById("video-shell");

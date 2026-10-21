@@ -16,8 +16,8 @@ Only these files make up the live page:
 - `style.css` — all styling (light-only; Newsreader + Karla from Google Fonts).
 - `script.js` — all behaviour, as IIFEs: scenes + nav, slideshow + gallery grid + lightbox, frisbee video fallback, messages form.
 - `server/` — the messages backend (Node, no dependencies; runs as systemd unit `scout-messages`). nginx denies `/server/`, dotfiles (incl. `.git`) and the notes files; see `server/README.md`. Restart the unit after editing `server/messages.js`.
-- `media/` — `media/pictures/my_scouty_boy.jpg` (hero), `media/slideshow/*` (slides), `media/videos/*`.
-- `server/media.js` — the media manager at `/media-admin` (systemd unit `scout-media`, password in `/etc/scout-media.env`). The owner uploads, renames and deletes files under `media/` from there, so `media/` changes on disk outside git; `media/` is owned by the `scout-media` user.
+- `media/` — one flat folder for every photo and video (no subfolders). `index.html` points at two directly: `02_my_scouty_boy.jpg` (hero) and `scout_good_catch.mp4` (`#catch`); the media manager won't rename those.
+- `server/media.js` — the media manager at `/media-admin` (systemd unit `scout-media`, password in `/etc/scout-media.env`). The owner uploads, renames and deletes files in `media/` from there, so `media/` changes on disk outside git; `media/` is owned by the `scout-media` user.
 
 Not used by `index.html` (artifacts of earlier tooling/iterations — don't edit them expecting site changes):
 - `slideshow.html`, `slideshow.js` — older standalone slideshow reading `media/pictures/slideshow/`, which no longer exists.
@@ -26,19 +26,19 @@ Not used by `index.html` (artifacts of earlier tooling/iterations — don't edit
 
 ## Scenes (fade between sections)
 
-The page doesn't scroll as one document. Each of the six parts (intro, dedication, slideshow, the catch, gallery, messages) is wrapped in a `.scene` div in `index.html`. `script.js` adds `.scenes` to `<html>`, which turns every scene into a fixed full-screen layer, with only `.is-active` visible. Wheel, touch swipe, keyboard and nav links fade to the next or previous scene. A scene taller than the screen scrolls inside itself and only fades once it reaches its top or bottom. All scene CSS is scoped under `.scenes`, so without JS the page falls back to normal scrolling. When adding a section, wrap it in `<div class="scene" data-anchor="<id>">`. The `#catch` video has no `autoplay`; the scene code plays it on entering that scene and pauses it on leaving. A scene can carry `data-clip="<gif or video path>"` and `data-clip-ms` to use that clip as a transition (`.scene-clip`: the old scene fades out, the clip fades in centred in a soft circle at 75% opacity, fades out, then the new scene fades in via an inline transition-delay; input locked until it ends) whenever you arrive at it; it's skipped on the first load and with reduced motion. No scene uses it right now; to try it, e.g. `data-clip="media/slideshow/04_BARKY_SCOUT.gif" data-clip-ms="2640"` on the slideshow scene.
+The page doesn't scroll as one document. Each of the six parts (intro, dedication, slideshow, the catch, gallery, messages) is wrapped in a `.scene` div in `index.html`. `script.js` adds `.scenes` to `<html>`, which turns every scene into a fixed full-screen layer, with only `.is-active` visible. Wheel, touch swipe, keyboard and nav links fade to the next or previous scene. A scene taller than the screen scrolls inside itself and only fades once it reaches its top or bottom. All scene CSS is scoped under `.scenes`, so without JS the page falls back to normal scrolling. When adding a section, wrap it in `<div class="scene" data-anchor="<id>">`. The `#catch` video has no `autoplay`; the scene code plays it on entering that scene and pauses it on leaving. A scene can carry `data-clip="<gif or video path>"` and `data-clip-ms` to use that clip as a transition (`.scene-clip`: the old scene fades out, the clip fades in centred in a soft circle at 75% opacity, fades out, then the new scene fades in via an inline transition-delay; input locked until it ends) whenever you arrive at it; it's skipped on the first load and with reduced motion. No scene uses it right now; to try it, e.g. `data-clip="media/04_BARKY_SCOUT.gif" data-clip-ms="2640"` on the slideshow scene.
 
 ## Slideshow mechanism
 
-`script.js` fetches `media/slideshow/` and parses the **nginx autoindex** HTML listing (`autoindex on` for `location /media/slideshow/` in the nginx config) to discover files. Consequences:
-- Two plain-text lists in `media/slideshow/` (one filename per line, edited via the checkboxes at `/media-admin`) decide what's used: `hidden.txt` = files not shown anywhere (default: shown), `slideshow.txt` = files in the slideshow (default: not). Gallery = shown images; slideshow = shown files that are also in `slideshow.txt`. A new file in the folder appears in the gallery but not the slideshow until it's ticked.
+`script.js` fetches `media/` and parses the **nginx autoindex** HTML listing (`autoindex on` for `location /media/` in the nginx config) to discover files. Consequences:
+- Two plain-text lists in `media/` (one filename per line, edited via the Gallery / Slideshow checkboxes at `/media-admin`) decide what's used, independently: `not_in_gallery.txt` = images left out of the gallery (default: in it), `slideshow.txt` = files in the slideshow (default: not). A new image appears in the gallery but not the slideshow until it's ticked.
 - Order is a natural-sort by filename, so files use numeric prefixes (`01_…`, `02_…`, `50_…`).
 - Images (jpg/png/gif/webp/avif) autoplay on a 6s timer; videos (mp4/webm/mov/m4v) play muted and advance on `ended` instead of the timer.
-- The `#gallery` grid (4 columns) is built from the same listing, images only (minus `hidden.txt`).
+- The `#gallery` grid (4 columns) is built from the same listing, images only (minus `not_in_gallery.txt`).
 - Clicking an image (in the slideshow or grid) opens the lightbox (wheel zoom toward cursor, drag-to-pan, Esc/click-out to close).
 - If the folder is moved or autoindex is disabled, the slideshow breaks — update both `DIR` in `script.js` and the nginx `location`.
 
-The `#catch` section plays `media/videos/scout_good_catch.mp4`; if it fails to load, `script.js` adds `.is-empty` to `#video-shell` to show a placeholder.
+The `#catch` section plays `media/scout_good_catch.mp4`; if it fails to load, `script.js` adds `.is-empty` to `#video-shell` to show a placeholder.
 
 ## Messages
 
