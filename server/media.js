@@ -31,6 +31,9 @@ var LOGIN_LIMIT = 10;                 // wrong passwords per visitor...
 var LOGIN_WINDOW_MS = 15 * 60e3;      // ...per 15 minutes
 var MEDIA_EXT = /\.(jpe?g|png|gif|webp|avif|mp4|webm|mov|m4v)$/i;
 var VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i;
+var GIF_EXT = /\.gif$/i;
+// How the file list is grouped on the admin page, in this order.
+var KINDS = [["image", "Images"], ["gif", "GIFs"], ["video", "Videos"], ["other", "Other files"]];
 // Folders the page itself depends on; they can't be removed from here.
 var CORE_DIRS = ["pictures", "slideshow", "videos"];
 // Files index.html points at directly; deleting them breaks the page.
@@ -301,7 +304,16 @@ function action(req, res) {
 
 // ---- admin page ----
 
-function adminPage(res, query) {
+function kindOf(name) {
+  return VIDEO_EXT.test(name) ? "video" : GIF_EXT.test(name) ? "gif" : MEDIA_EXT.test(name) ? "image" : "other";
+}
+
+function adminPage(req, res, query) {
+  // "type" groups the list by kind; "order" is one list in display order.
+  // The choice sticks in a cookie.
+  var view = query.get("view"), cookie = null;
+  if (view === "type" || view === "order") cookie = "media_view=" + view + "; Path=/media-admin; Max-Age=31536000; HttpOnly; Secure; SameSite=Strict";
+  else view = /(?:^|;\s*)media_view=order/.test(req.headers.cookie || "") ? "order" : "type";
   var dirs = listDirs();
   var dir = query.get("dir");
   if (dirs.indexOf(dir) < 0) dir = dirs.indexOf("slideshow") >= 0 ? "slideshow" : dirs[0];
@@ -314,22 +326,37 @@ function adminPage(res, query) {
     return '<a class="tab' + (d === dir ? ' on' : '') + '" href="/media-admin?dir=' + encodeURIComponent(d) + '">' + esc(d) + '</a>';
   }).join("");
 
-  var rows = files.length ? files.map(function (f) {
+  function row(f) {
     var url = "/media/" + encodeURIComponent(dir) + "/" + encodeURIComponent(f.name);
     var thumb = VIDEO_EXT.test(f.name)
       ? '<video src="' + esc(url) + '#t=0.5" preload="metadata" muted></video>'
       : MEDIA_EXT.test(f.name) ? '<img src="' + esc(url) + '" loading="lazy" alt="">' : '<span class="nothumb">file</span>';
     var inUse = IN_USE.indexOf(dir + "/" + f.name) >= 0;
     var hidden = '<input type="hidden" name="dir" value="' + esc(dir) + '"><input type="hidden" name="file" value="' + esc(f.name) + '">';
-    return '<div class="file"><a class="thumb" href="' + esc(url) + '" target="_blank">' + thumb + '</a>' +
+    return '<div class="file" data-order="' + f.order + '" data-kind="' + kindOf(f.name) + '"><a class="thumb" href="' + esc(url) + '" target="_blank">' + thumb + '</a>' +
       '<div class="info"><div class="name">' + esc(f.name) + '</div><div class="meta">' + fmtSize(f.size) +
+      (dir === FLAG_DIR ? ' · <span class="where"></span>' : '') +
       (inUse ? ' · <b>used on the page</b>' : '') + '</div>' +
       (dir === FLAG_DIR ? flagBoxes(f.name, hiddenList.indexOf(f.name) < 0, slidesList.indexOf(f.name) >= 0) : '') +
       '<form method="post" class="row">' + hidden + '<input type="hidden" name="action" value="rename">' +
       '<input name="to" value="' + esc(f.name) + '" aria-label="New name"><button>Rename</button></form>' +
       '<form method="post" data-confirm="Delete ' + esc(f.name) + '?' + (inUse ? ' The page uses this file directly and will show an empty spot without it.' : '') + '">' +
       hidden + '<button name="action" value="delete" class="delete">Delete</button></form></div></div>';
-  }).join("") : '<p class="none">No files in this folder yet.</p>';
+  }
+
+  // listFiles is already in display (filename) order.
+  files.forEach(function (f, i) { f.order = i; });
+  var rows;
+  if (!files.length) rows = '<p class="none">No files in this folder yet.</p>';
+  else if (view === "order") rows = files.map(row).join("");
+  else rows = KINDS.map(function (k) {
+    var group = files.filter(function (f) { return kindOf(f.name) === k[0]; });
+    return group.length ? '<h3>' + k[1] + ' (' + group.length + ')</h3>' + group.map(row).join("") : '';
+  }).join("");
+  var viewLink = function (v, label) {
+    return '<a href="/media-admin?dir=' + encodeURIComponent(dir) + '&view=' + v + '"' + (view === v ? ' class="on" aria-current="true"' : '') + '>' + label + '</a>';
+  };
+  var toggle = files.length ? '<div class="view">' + viewLink("type", "By type") + viewLink("order", dir === FLAG_DIR ? "Display order" : "By name") + '</div>' : '';
 
   var note = dir === "slideshow"
     ? '<p class="hint"><b>Shown on site</b> photos appear in the gallery grid; tick <b>In slideshow</b> as well to add a photo or video to the slideshow. New uploads are shown but not in the slideshow. Slides play in filename order, so start names with numbers (01_, 02_, …) and rename to reorder.</p>'
@@ -354,6 +381,11 @@ function adminPage(res, query) {
     '.flags{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;font:14px system-ui,sans-serif;margin-bottom:10px}' +
     '.flags label{display:flex;gap:6px;align-items:center;cursor:pointer}.flags label.off{color:#B3A08C}.flags input{width:17px;height:17px;padding:0;margin:0;accent-color:#A8571F}' +
     '.saved{font-size:12px;color:#6B5748}.saved.err{color:#9b2c2c}' +
+    'h3{font:600 15px system-ui,sans-serif;margin:26px 0 6px;color:#4A3B31}' +
+    '.listhead{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px;margin:36px 0 4px}.listhead h2{margin:0}' +
+    '.view{display:flex;border:1px solid #DBC8AE;border-radius:999px;overflow:hidden;font:600 13px system-ui,sans-serif}' +
+    '.view a{padding:6px 14px;color:#2B211B;text-decoration:none;background:#fff}.view a.on{background:#A8571F;color:#FFF8EC}' +
+    '.where{color:#8F4818;font-weight:600}.where.off{color:#9b8775;font-weight:400}' +
     'form{display:inline}.row{display:flex;gap:8px;margin-bottom:8px}.row input{flex:1;min-width:0}' +
     'input{font:14px system-ui,sans-serif;padding:7px 10px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8}' +
     'button{font:600 13px system-ui,sans-serif;padding:8px 14px;border-radius:999px;border:1px solid #DBC8AE;background:#FAF4EA;cursor:pointer;color:#2B211B}' +
@@ -368,12 +400,14 @@ function adminPage(res, query) {
       '<label class="drop" id="drop">Drop photos or videos here, or click to choose' +
       '<input type="file" id="pick" multiple accept="image/*,video/*,.mov,.m4v"></label><div id="progress"></div>' +
       note +
-      '<h2>In ' + esc(dir) + ' (' + files.length + ')</h2>' + rows : '') +
+      '<div class="listhead"><h2>In ' + esc(dir) + ' (' + files.length + ')</h2>' + toggle + '</div>' + rows : '') +
     '<h2>Folders</h2><div class="folders">' +
     '<form method="post"><input type="hidden" name="action" value="mkdir"><input name="name" placeholder="new_folder_name" required> <button class="primary">Create folder</button></form>' +
     (dir && CORE_DIRS.indexOf(dir) < 0 ? '<form method="post" data-confirm="Remove the empty folder ' + esc(dir) + '?"><input type="hidden" name="dir" value="' + esc(dir) + '"><button name="action" value="rmdir" class="delete">Remove ' + esc(dir) + '</button></form>' : '') +
     '</div></main><script>' + clientScript(dir) + '</script></body></html>';
-  send(res, 200, html, { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" });
+  var headers = { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" };
+  if (cookie) headers["Set-Cookie"] = cookie;
+  send(res, 200, html, headers);
 }
 
 function flagBoxes(file, shown, slides) {
@@ -386,10 +420,28 @@ function flagBoxes(file, shown, slides) {
 function clientScript(dir) {
   return '(function () {' +
     'var DIR = ' + JSON.stringify(dir || "").replace(/</g, "\\u003c") + ';' +
+    // Label each file with where it shows up, the way script.js picks:
+    // gallery = shown images and GIFs, slideshow = shown and ticked, both
+    // in filename order.
+    'function renumber() {' +
+    '  var rows = Array.prototype.slice.call(document.querySelectorAll(".file[data-order]"));' +
+    '  rows.sort(function (a, b) { return a.getAttribute("data-order") - b.getAttribute("data-order"); });' +
+    '  var slide = 0, gallery = 0;' +
+    '  rows.forEach(function (r) {' +
+    '    var where = r.querySelector(".where"), shown = r.querySelector(".flag-shown"), slides = r.querySelector(".flag-slides");' +
+    '    if (!where || !shown) return;' +
+    '    var kind = r.getAttribute("data-kind"), parts = [];' +
+    '    if (shown.checked && slides.checked) parts.push("Slide " + (++slide));' +
+    '    if (shown.checked && (kind === "image" || kind === "gif")) parts.push("Gallery " + (++gallery));' +
+    '    where.textContent = !shown.checked ? "Hidden" : parts.length ? parts.join(" · ") : "Not on the page";' +
+    '    where.className = parts.length ? "where" : "where off";' +
+    '  });' +
+    '}' +
+    'renumber();' +
     'document.querySelectorAll(".flags").forEach(function (box) {' +
     '  var shown = box.querySelector(".flag-shown"), slides = box.querySelector(".flag-slides"), note = box.querySelector(".saved");' +
     '  function save() {' +
-    '    slides.disabled = !shown.checked; slides.parentNode.classList.toggle("off", !shown.checked);' +
+    '    slides.disabled = !shown.checked; slides.parentNode.classList.toggle("off", !shown.checked); renumber();' +
     '    note.className = "saved"; note.textContent = "Saving…";' +
     '    var body = new URLSearchParams({ action: "flags", dir: DIR, file: box.getAttribute("data-file"), shown: shown.checked ? "1" : "", slideshow: slides.checked ? "1" : "" });' +
     '    fetch("/media-admin", { method: "POST", body: body }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error); }); })' +
@@ -445,7 +497,7 @@ http.createServer(function (req, res) {
     if (req.method === "GET" && u.pathname === "/media-admin") return loginPage(res, "");
     return json(res, 401, { error: "You've been signed out. Reload the page and sign in again." });
   }
-  if (req.method === "GET" && u.pathname === "/media-admin") return adminPage(res, u.searchParams);
+  if (req.method === "GET" && u.pathname === "/media-admin") return adminPage(req, res, u.searchParams);
   if (req.method !== "POST") return send(res, 405, "Method not allowed", { Allow: "GET, POST" });
   if (!sameOrigin(req)) return send(res, 403, "Forbidden");
   if (u.pathname === "/media-admin/upload") return upload(req, res, u.searchParams);
