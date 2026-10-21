@@ -27,6 +27,7 @@
   var LOCK_MS = 1000;      // ignore further input while a fade runs
   var SETTLE_MS = 160;     // a scene must sit still this long at its edge before fading
   var CLIP_DELAY_MS = 0;   // when the clip starts, relative to the fade
+  var CLIP_FADE_OUT_MS = 900; // matches .scene-clip's fade-out in style.css
   var current = 0;
   var lockUntil = 0;
   var lastScrollAt = 0;
@@ -68,7 +69,8 @@
     var ms = Number(scene.getAttribute("data-clip-ms")) || 2000;
     lockUntil = Math.max(lockUntil, Date.now() + CLIP_DELAY_MS + ms);
     clipTimers.push(setTimeout(function () { clip.classList.add("show"); }, CLIP_DELAY_MS));
-    clipTimers.push(setTimeout(stopClip, CLIP_DELAY_MS + ms));
+    // Start fading out early enough to be gone by the end of the clip.
+    clipTimers.push(setTimeout(stopClip, CLIP_DELAY_MS + Math.max(0, ms - CLIP_FADE_OUT_MS)));
   }
 
   function activate(i, dir, instant) {
