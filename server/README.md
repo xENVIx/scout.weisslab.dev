@@ -23,7 +23,7 @@ After editing `messages.js`, run `systemctl restart scout-messages`.
 
 # Media manager
 
-`media.js` is a second dependency-free Node server, on `127.0.0.1:3312`. It serves `/media-admin`, which shows a sign-in form for the `ADMIN_PASSWORD` in `/etc/scout-media.env` and then keeps you signed in for 30 days with a signed cookie. Ten wrong passwords from one IP locks it out for 15 minutes. From that page you can upload photos and videos into any folder under `media/` (one file per request, streamed to disk, 1 GB max), rename or delete files, and create or remove folders. `pictures`, `slideshow` and `videos` can't be removed.
+`media.js` is a second dependency-free Node server, on `127.0.0.1:3312`. It serves `/media-admin`, which shows a sign-in form for the `ADMIN_PASSWORD` in `/etc/scout-media.env` and then keeps you signed in for 30 days with a signed cookie. Ten wrong passwords from one IP locks it out for 15 minutes. From that page you can upload photos and videos into any folder under `media/` (one file per request, streamed to disk, 1 GB max), rename or delete files, and create or remove folders. In the slideshow folder each file also has "Shown on site" and "In slideshow" checkboxes, saved to `media/slideshow/hidden.txt` and `slideshow.txt`. `pictures`, `slideshow` and `videos` can't be removed.
 
 It runs as the system user `scout-media`, which owns `media/` and can't write anywhere else.
 

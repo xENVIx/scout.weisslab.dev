@@ -2,8 +2,10 @@
 
    Slideshow: /media/slideshow/ is read via nginx's directory listing
    (autoindex is on for that location in conf/nginx.conf). Every image
-   and video file found there becomes a slide, ordered by filename, so
-   dropping a new file into the folder is all that's needed to add it.
+   and video file found there is a candidate, ordered by filename. Two lists
+   in the same folder (one filename per line, kept by /media-admin) pick from
+   them: hidden.txt names files not shown at all, and slideshow.txt names the
+   ones in the slideshow. The gallery grid is every shown image.
 */
 
 /* Scenes: the page is four full-screen .scene layers (intro, dedication,
@@ -255,7 +257,20 @@
 
   if (!stage) return;
 
-  fetch(DIR)
+  // A missing list just means an empty one.
+  function fetchList(name) {
+    return fetch(DIR + name, { cache: "no-cache" })
+      .then(function (r) { return r.ok ? r.text() : ""; }, function () { return ""; })
+      .then(function (t) {
+        var set = {};
+        t.split("\n").forEach(function (l) { l = l.trim(); if (l) set[l] = true; });
+        return set;
+      });
+  }
+
+  var hidden = {}, inSlideshow = {};
+  Promise.all([fetchList("hidden.txt"), fetchList("slideshow.txt")])
+    .then(function (lists) { hidden = lists[0]; inSlideshow = lists[1]; return fetch(DIR, { cache: "no-cache" }); })
     .then(function (r) { return r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status)); })
     .then(function (html) {
       var doc = new DOMParser().parseFromString(html, "text/html");
@@ -271,8 +286,10 @@
         return true;
       });
       files.sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }); });
+      files = files.filter(function (f) { return !hidden[f]; });
 
-      start(files);
+      buildGrid(files.filter(function (f) { return IMAGE_RE.test(f); }));
+      start(files.filter(function (f) { return inSlideshow[f]; }));
     })
     .catch(function (err) {
       console.error("slideshow: could not read " + DIR, err);
@@ -284,10 +301,9 @@
     items = files.map(function (f) {
       return { file: f, type: VIDEO_RE.test(f) ? "video" : "image" };
     });
-    buildGrid();
 
     if (!items.length) {
-      stage.innerHTML = '<div class="ss-empty">No photos or videos yet — drop some into media/slideshow/.</div>';
+      stage.innerHTML = '<div class="ss-empty">No photos or videos in the slideshow yet.</div>';
       return;
     }
 
@@ -352,15 +368,14 @@
 
   // The Gallery section: every photo from the same folder, as a grid of
   // square thumbnails that open in the lightbox. Videos are left out.
-  function buildGrid() {
+  function buildGrid(files) {
     if (!grid) return;
-    items.forEach(function (item) {
-      if (item.type !== "image") return;
+    files.forEach(function (file) {
       var b = document.createElement("button");
       b.type = "button";
       b.setAttribute("aria-label", "Open photo");
       var img = document.createElement("img");
-      img.src = DIR + item.file;
+      img.src = DIR + file;
       img.alt = "Scout";
       img.loading = "lazy";
       b.appendChild(img);

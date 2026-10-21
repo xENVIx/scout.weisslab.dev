@@ -31,10 +31,10 @@ The page doesn't scroll as one document. Each of the six parts (intro, dedicatio
 ## Slideshow mechanism
 
 `script.js` fetches `media/slideshow/` and parses the **nginx autoindex** HTML listing (`autoindex on` for `location /media/slideshow/` in the nginx config) to discover files. Consequences:
-- Adding/removing a slide = adding/removing a file in `media/slideshow/`; no code change.
+- Two plain-text lists in `media/slideshow/` (one filename per line, edited via the checkboxes at `/media-admin`) decide what's used: `hidden.txt` = files not shown anywhere (default: shown), `slideshow.txt` = files in the slideshow (default: not). Gallery = shown images; slideshow = shown files that are also in `slideshow.txt`. A new file in the folder appears in the gallery but not the slideshow until it's ticked.
 - Order is a natural-sort by filename, so files use numeric prefixes (`01_…`, `02_…`, `50_…`).
 - Images (jpg/png/gif/webp/avif) autoplay on a 6s timer; videos (mp4/webm/mov/m4v) play muted and advance on `ended` instead of the timer.
-- The `#gallery` grid (4 columns) is built from the same listing, images only, so it needs no separate upkeep.
+- The `#gallery` grid (4 columns) is built from the same listing, images only (minus `hidden.txt`).
 - Clicking an image (in the slideshow or grid) opens the lightbox (wheel zoom toward cursor, drag-to-pan, Esc/click-out to close).
 - If the folder is moved or autoindex is disabled, the slideshow breaks — update both `DIR` in `script.js` and the nginx `location`.
 
