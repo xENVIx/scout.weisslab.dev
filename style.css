@@ -368,6 +368,8 @@ footer .eyebrow { margin-top: 14px; }
 @media (max-width: 640px) {
   /* Wider side padding keeps text clear of the docked .sidenav. */
   .wrap, .narrow, .mid { padding-left: 50px; padding-right: 50px; }
+  /* Every scene after the intro has the sidebar docked on the left. */
+  .scenes .scene:not(#top) :is(.wrap, .narrow, .mid) { padding-left: 60px; padding-right: 20px; }
   .frame img { aspect-ratio: 499 / 934; }
   .frame { width: min(100%, 260px); }
 }
