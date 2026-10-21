@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A static, single-page memorial site for Scout (a dog), served live at inlovingmemoryofscout.com. There is no build step, package manager, linter, or test suite: plain HTML/CSS/vanilla JS (ES5 style, IIFEs, `var`). This directory **is** the nginx document root, so edits on disk are live immediately.
 
-- Server config: `/etc/nginx/sites-available/inlovingmemoryofscout.com` (outside the repo). After changing it: `sudo nginx -t && sudo systemctl reload nginx`.
+- Server config: `/etc/nginx/sites-available/inlovingmemoryofscout.com` (outside the repo). After changing it: `sudo nginx -t && sudo systemctl reload nginx`. It sends `Cache-Control: no-cache` for HTML/CSS/JS/TXT (a `map` at the top of the file), so browsers revalidate those on every visit instead of using a stale copy.
 - Local preview: `python3 -m http.server` works for the page itself, but the slideshow will show its error state because it depends on nginx's autoindex HTML (see below).
 
 ## Live site vs. leftover files

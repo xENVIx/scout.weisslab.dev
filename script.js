@@ -253,7 +253,7 @@
 
   var lightbox = document.getElementById("lightbox");
   var lightboxImg = document.getElementById("lightbox-img");
-  var lightboxVideo = document.getElementById("lightbox-video");
+  var lightboxVideo = null; // made on first use, so photos never share the viewport with it
   var lightboxClose = document.getElementById("lightbox-close");
 
   if (!stage) return;
@@ -462,11 +462,19 @@
     baseW = 0;
     lightboxImg.style.width = "";
     lightbox.classList.remove("zoomed");
-    lightboxImg.hidden = !!isVideo;
-    if (lightboxVideo) lightboxVideo.hidden = !isVideo;
+    // Shown and hidden with inline display, not [hidden], so a stale
+    // stylesheet can't leave both in the flex row side by side.
+    lightboxImg.style.display = isVideo ? "none" : "";
+    if (lightboxVideo) lightboxVideo.style.display = isVideo ? "" : "none";
     lightbox.hidden = false;
     clearTimeout(timer);
-    if (isVideo && lightboxVideo) {
+    if (isVideo) {
+      if (!lightboxVideo) {
+        lightboxVideo = document.createElement("video");
+        lightboxVideo.controls = true;
+        lightboxVideo.playsInline = true;
+        lightboxImg.parentNode.appendChild(lightboxVideo);
+      }
       lightboxVideo.src = src;
       var p = lightboxVideo.play();
       if (p && p.catch) p.catch(function () {});
