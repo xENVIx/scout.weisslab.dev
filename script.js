@@ -11,7 +11,10 @@
    the page. A scene taller than the screen scrolls normally inside itself
    and only fades once you're at its top or bottom edge. Wheel, touch swipe,
    keyboard and the nav links all go through go(). .sidenav slides in on
-   every scene after the intro (the intro has .topnav instead). */
+   every scene after the intro (the intro has .topnav instead).
+
+   A scene with data-clip="<gif or video>" (and data-clip-ms, how long to
+   show it) plays that clip over the fade whenever you arrive at it. */
 (function scenes() {
   var list = Array.prototype.slice.call(document.querySelectorAll(".scene"));
   var sidenav = document.getElementById("sidenav");
@@ -22,9 +25,12 @@
   var SHIFT = 24;          // px of vertical drift during the fade
   var LOCK_MS = 1000;      // ignore further input while a fade runs
   var SETTLE_MS = 160;     // a scene must sit still this long at its edge before fading
+  var CLIP_DELAY_MS = 200; // start the clip partway into the fade
   var current = 0;
   var lockUntil = 0;
   var lastScrollAt = 0;
+  var reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var clip = null, clipTimers = [];
 
   document.documentElement.classList.add("scenes");
 
@@ -33,6 +39,35 @@
   function busy() { return lightbox && !lightbox.hidden; }
 
   function setShift(el, px) { el.style.setProperty("--shift", px + "px"); }
+
+  function stopClip() {
+    clipTimers.forEach(clearTimeout);
+    clipTimers = [];
+    if (clip) clip.classList.remove("show");
+  }
+
+  function playClip(scene) {
+    stopClip();
+    var src = scene.getAttribute("data-clip");
+    if (!src || reduceMotion) return;
+    if (!clip) {
+      clip = document.createElement("div");
+      clip.className = "scene-clip";
+      clip.setAttribute("aria-hidden", "true");
+      document.body.appendChild(clip);
+    }
+    // A fresh element each time so the clip starts from its first frame.
+    var isVideo = /\.(mp4|webm|mov|m4v)$/i.test(src);
+    var media = document.createElement(isVideo ? "video" : "img");
+    if (isVideo) { media.muted = true; media.playsInline = true; media.autoplay = true; }
+    else media.alt = "";
+    media.src = src;
+    clip.textContent = "";
+    clip.appendChild(media);
+    var ms = Number(scene.getAttribute("data-clip-ms")) || 2000;
+    clipTimers.push(setTimeout(function () { clip.classList.add("show"); }, CLIP_DELAY_MS));
+    clipTimers.push(setTimeout(stopClip, CLIP_DELAY_MS + ms));
+  }
 
   function activate(i, dir, instant) {
     var from = list[current];
@@ -51,6 +86,8 @@
     }
     to.classList.add("is-active");
     if (instant) { void to.offsetWidth; to.style.transition = ""; }
+
+    if (!instant && from !== to) playClip(to);
 
     current = i;
     lastScrollAt = 0;
@@ -94,6 +131,14 @@
   list.forEach(function (el) { el.style.transition = "none"; });
   activate(start, 1, true);
   list.forEach(function (el) { void el.offsetWidth; el.style.transition = ""; });
+
+  // Fetch the clips once the page has loaded, so they're ready the first time.
+  window.addEventListener("load", function () {
+    list.forEach(function (el) {
+      var src = el.getAttribute("data-clip");
+      if (src && !reduceMotion && !/\.(mp4|webm|mov|m4v)$/i.test(src)) new Image().src = src;
+    });
+  });
 
   window.addEventListener("wheel", function (e) {
     if (busy()) return;

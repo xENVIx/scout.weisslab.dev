@@ -360,6 +360,26 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 }
 .lightbox-close:hover { background: rgba(0,0,0,.6); }
 
+/* ---- scene clips ----
+   A short clip shown over the fade into a scene with data-clip (script.js).
+   It never takes clicks, so it can't get in the way. */
+.scene-clip {
+  position: fixed; left: 50%; top: 50%; z-index: 700;
+  width: min(420px, 70vw);
+  transform: translate(-50%, -46%) scale(.96);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 300ms ease, transform 300ms ease, visibility 0s linear 300ms;
+}
+.scene-clip.show {
+  opacity: 1; visibility: visible; transform: translate(-50%, -50%);
+  transition: opacity 300ms ease, transform 400ms cubic-bezier(.2,.7,.3,1), visibility 0s;
+}
+.scene-clip img, .scene-clip video {
+  display: block; width: 100%; height: auto;
+  border-radius: 6px; border: 4px solid #fff;
+  box-shadow: 0 24px 60px rgba(64,42,25,.28);
+}
+
 footer { border-top: 1px solid var(--rule); }
 footer .mid { padding: clamp(40px,6vw,72px) clamp(20px,5vw,48px); text-align: center; }
 footer .name { font-size: clamp(26px,3.6vw,38px); font-weight: 300; font-style: italic; color: #33271F; }
