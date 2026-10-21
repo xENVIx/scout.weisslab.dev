@@ -17,6 +17,7 @@ Only these files make up the live page:
 - `script.js` — all behaviour, as IIFEs: scenes + nav, slideshow + gallery grid + lightbox, frisbee video fallback, messages form.
 - `server/` — the messages backend (Node, no dependencies; runs as systemd unit `scout-messages`). nginx denies `/server/`, dotfiles (incl. `.git`) and the notes files; see `server/README.md`. Restart the unit after editing `server/messages.js`.
 - `media/` — `media/pictures/my_scouty_boy.jpg` (hero), `media/slideshow/*` (slides), `media/videos/*`.
+- `server/media.js` — the media manager at `/media-admin` (systemd unit `scout-media`, password in `/etc/scout-media.env`). The owner uploads, renames and deletes files under `media/` from there, so `media/` changes on disk outside git; `media/` is owned by the `scout-media` user.
 
 Not used by `index.html` (artifacts of earlier tooling/iterations — don't edit them expecting site changes):
 - `slideshow.html`, `slideshow.js` — older standalone slideshow reading `media/pictures/slideshow/`, which no longer exists.

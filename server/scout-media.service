@@ -1,0 +1,20 @@
+[Unit]
+Description=Scout media manager (inlovingmemoryofscout.com /media-admin)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/node /var/www/inlovingmemoryofscout.com/html/server/media.js
+EnvironmentFile=/etc/scout-media.env
+# Runs as its own unprivileged user that owns media/; it can write nowhere else.
+User=scout-media
+Group=scout-media
+UMask=0022
+ProtectSystem=strict
+ReadWritePaths=/var/www/inlovingmemoryofscout.com/html/media
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
