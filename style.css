@@ -280,8 +280,8 @@ footer .name { font-size: clamp(26px,3.6vw,38px); font-weight: 300; font-style: 
 footer .eyebrow { margin-top: 14px; }
 
 @media (max-width: 640px) {
-  /* Extra 10px per side keeps text clear of the docked .sidenav. */
-  .wrap, .narrow, .mid { padding-left: 30px; padding-right: 30px; }
+  /* Wider side padding keeps text clear of the docked .sidenav. */
+  .wrap, .narrow, .mid { padding-left: 50px; padding-right: 50px; }
   .frame img { aspect-ratio: 499 / 934; }
   .frame { width: min(100%, 260px); }
 }
