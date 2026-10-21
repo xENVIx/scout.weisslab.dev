@@ -276,6 +276,8 @@
     });
 
     document.addEventListener("keydown", function (e) {
+      var tag = e.target.tagName;
+      if (tag === "TEXTAREA" || tag === "INPUT") return; // typing a message
       if (e.key === "ArrowRight") next();
       else if (e.key === "ArrowLeft") previous();
     });
@@ -449,4 +451,60 @@
   function empty() { shell.classList.add("is-empty"); v.removeAttribute("controls"); }
   v.addEventListener("error", empty);
   if (v.networkState === 3) empty();
+})();
+
+/* Messages: visitors leave a note for Scout. New messages are held until
+   approved at /messages-admin (server/messages.js), so the form only says
+   thanks; the list shows already-approved messages, newest first. */
+(function messages() {
+  var form = document.getElementById("message-form");
+  var list = document.getElementById("message-list");
+  var status = document.getElementById("message-status");
+  if (!form || !list) return;
+  var API = "/api/messages";
+
+  fetch(API)
+    .then(function (r) { return r.ok ? r.json() : []; })
+    .then(function (items) {
+      items.forEach(function (m) {
+        var div = document.createElement("div");
+        div.className = "msg";
+        var p = document.createElement("p");
+        p.textContent = m.text;
+        var t = document.createElement("time");
+        t.dateTime = m.createdAt;
+        t.textContent = new Date(m.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+        div.appendChild(p);
+        div.appendChild(t);
+        list.appendChild(div);
+      });
+    })
+    .catch(function () {});
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var button = form.querySelector("button");
+    var text = form.elements.text.value.trim();
+    if (!text) return;
+    button.disabled = true;
+    status.textContent = "Sending…";
+    fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text, website: form.elements.website.value })
+    })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (body) {
+          if (!r.ok) throw new Error(body.error || "");
+        });
+      })
+      .then(function () {
+        form.reset();
+        status.textContent = "Thank you. Your message will appear here once it’s been approved.";
+      })
+      .catch(function (err) {
+        status.textContent = err.message || "Sorry, that didn’t send. Please try again in a moment.";
+      })
+      .then(function () { button.disabled = false; });
+  });
 })();

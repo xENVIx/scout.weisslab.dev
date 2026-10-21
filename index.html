@@ -17,18 +17,21 @@
 <body>
 
 <nav class="sidenav" id="sidenav" aria-label="Section navigation">
+  <a href="#top" class="to-top"><span aria-hidden="true">&uarr;</span> Top</a>
   <a href="#dedication">Memorial</a>
   <a href="#slideshow">Slideshow</a>
   <a href="#catch">The Catch</a>
   <a href="#gallery">Gallery</a>
+  <a href="#messages">Messages</a>
 </nav>
 
-<div class="scene" data-anchor="">
+<div class="scene" id="top" data-anchor="">
 <nav class="topnav" id="topnav" aria-label="Section navigation">
   <a href="#dedication">Memorial</a>
   <a href="#slideshow">Slideshow</a>
   <a href="#catch">The Catch</a>
   <a href="#gallery">Gallery</a>
+  <a href="#messages">Messages</a>
 </nav>
 
 <div class="hero-bg">
@@ -105,6 +108,25 @@
     <h2>Gallery</h2>
   </div>
   <div class="photo-grid" id="photo-grid"></div>
+</section>
+</div>
+
+<div class="scene" data-anchor="messages">
+<section class="narrow section" id="messages">
+  <div class="head">
+    <h2>Write something for Scout</h2>
+  </div>
+  <form class="message-form" id="message-form">
+    <label class="sr-only" for="message-text">Your message</label>
+    <textarea id="message-text" name="text" rows="5" maxlength="2000" required placeholder="A memory, a thank-you, a goodbye&hellip;"></textarea>
+    <!-- Honeypot for bots; real visitors never see or fill this. -->
+    <input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" />
+    <div class="message-actions">
+      <button type="submit" class="message-send">Leave a message</button>
+      <p class="message-status" id="message-status" aria-live="polite"></p>
+    </div>
+  </form>
+  <div class="message-list" id="message-list"></div>
 </section>
 </div>
 
