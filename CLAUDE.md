@@ -1,0 +1,39 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+A static, single-page memorial site for Scout (a dog), served live at inlovingmemoryofscout.com. There is no build step, package manager, linter, or test suite: plain HTML/CSS/vanilla JS (ES5 style, IIFEs, `var`). This directory **is** the nginx document root, so edits on disk are live immediately.
+
+- Server config: `/etc/nginx/sites-available/inlovingmemoryofscout.com` (outside the repo). After changing it: `sudo nginx -t && sudo systemctl reload nginx`.
+- Local preview: `python3 -m http.server` works for the page itself, but the slideshow will show its error state because it depends on nginx's autoindex HTML (see below).
+
+## Live site vs. leftover files
+
+Only these files make up the live page:
+- `index.html` — all markup (hero, dedication, `#gallery` slideshow, `#catch` video, lightbox).
+- `style.css` — all styling (light-only; Newsreader + Karla from Google Fonts).
+- `script.js` — all behaviour, as three IIFEs: section nav, slideshow + lightbox, frisbee video fallback.
+- `media/` — `media/pictures/my_scouty_boy.jpg` (hero), `media/slideshow/*` (slides), `media/videos/*`.
+
+Not used by `index.html` (artifacts of earlier tooling/iterations — don't edit them expecting site changes):
+- `slideshow.html`, `slideshow.js` — older standalone slideshow reading `media/pictures/slideshow/`, which no longer exists.
+- `Scout.dc.html`, `support.js`, `image-slot.js`, `.image-slots.state.json`, `.thumbnail` — an exported design-tool ("dc-runtime"/omelette) mockup; `support.js` is generated code.
+- `github.md` — sync notes from that design tool; its paths are partly out of date.
+
+## Slideshow mechanism
+
+`script.js` fetches `media/slideshow/` and parses the **nginx autoindex** HTML listing (`autoindex on` for `location /media/slideshow/` in the nginx config) to discover files. Consequences:
+- Adding/removing a slide = adding/removing a file in `media/slideshow/`; no code change.
+- Order is a natural-sort by filename, so files use numeric prefixes (`01_…`, `02_…`, `50_…`).
+- Images (jpg/png/gif/webp/avif) autoplay on a 6s timer; videos (mp4/webm/mov/m4v) play muted and advance on `ended` instead of the timer.
+- Clicking an image opens the lightbox (wheel zoom toward cursor, drag-to-pan, Esc/click-out to close).
+- If the folder is moved or autoindex is disabled, the slideshow breaks — update both `DIR` in `script.js` and the nginx `location`.
+
+The `#catch` section plays `media/videos/scout_good_catch.mp4`; if it fails to load, `script.js` adds `.is-empty` to `#video-shell` to show a placeholder.
+
+## Conventions
+
+- Commented-out blocks in `index.html` (headings, caption, footer) were left intentionally by the owner — leave them unless asked.
+- The page forces light mode (`color-scheme: only light`, `darkreader-lock`); keep it that way.
