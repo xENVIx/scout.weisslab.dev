@@ -175,6 +175,7 @@
   var VIDEO_RE = /\.(mp4|webm|mov|m4v)$/i;
 
   var stage = document.getElementById("slideshow-stage");
+  var grid = document.getElementById("photo-grid");
   var dotWrap = document.getElementById("slideshow-dots");
   var counter = document.getElementById("slideshow-count");
   var prevBtn = document.getElementById("ss-prev");
@@ -215,12 +216,14 @@
     .catch(function (err) {
       console.error("slideshow: could not read " + DIR, err);
       stage.innerHTML = '<div class="ss-empty">Couldn’t load the slideshow right now.</div>';
+      if (grid) grid.innerHTML = '<div class="ss-empty">Couldn’t load the photos right now.</div>';
     });
 
   function start(files) {
     items = files.map(function (f) {
       return { file: f, type: VIDEO_RE.test(f) ? "video" : "image" };
     });
+    buildGrid();
 
     if (!items.length) {
       stage.innerHTML = '<div class="ss-empty">No photos or videos yet — drop some into media/slideshow/.</div>';
@@ -282,6 +285,26 @@
 
     show();
     tick();
+  }
+
+  // The Gallery section: every photo from the same folder, as a grid of
+  // square thumbnails that open in the lightbox. Videos are left out.
+  function buildGrid() {
+    if (!grid) return;
+    items.forEach(function (item) {
+      if (item.type !== "image") return;
+      var b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("aria-label", "Open photo");
+      var img = document.createElement("img");
+      img.src = DIR + item.file;
+      img.alt = "Scout";
+      img.loading = "lazy";
+      b.appendChild(img);
+      b.addEventListener("click", function () { openLightbox(img.src); });
+      grid.appendChild(b);
+    });
+    if (!grid.children.length) grid.innerHTML = '<div class="ss-empty">No photos yet.</div>';
   }
 
   function show() {

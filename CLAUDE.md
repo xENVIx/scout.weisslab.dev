@@ -12,7 +12,7 @@ A static, single-page memorial site for Scout (a dog), served live at inlovingme
 ## Live site vs. leftover files
 
 Only these files make up the live page:
-- `index.html` — all markup (hero, dedication, `#gallery` slideshow, `#catch` video, lightbox).
+- `index.html` — all markup (hero, `#dedication`, `#slideshow`, `#catch` video, `#gallery` grid, lightbox).
 - `style.css` — all styling (light-only; Newsreader + Karla from Google Fonts).
 - `script.js` — all behaviour, as three IIFEs: scenes + nav, slideshow + lightbox, frisbee video fallback.
 - `media/` — `media/pictures/my_scouty_boy.jpg` (hero), `media/slideshow/*` (slides), `media/videos/*`.
@@ -24,7 +24,7 @@ Not used by `index.html` (artifacts of earlier tooling/iterations — don't edit
 
 ## Scenes (fade between sections)
 
-The page doesn't scroll as one document. Each of the four parts (intro, dedication, slideshow, the catch) is wrapped in a `.scene` div in `index.html`. `script.js` adds `.scenes` to `<html>`, which turns every scene into a fixed full-screen layer, with only `.is-active` visible. Wheel, touch swipe, keyboard and nav links fade to the next or previous scene. A scene taller than the screen scrolls inside itself and only fades once it reaches its top or bottom. All scene CSS is scoped under `.scenes`, so without JS the page falls back to normal scrolling. When adding a section, wrap it in `<div class="scene" data-anchor="<id>">`. The `#catch` video has no `autoplay`; the scene code plays it on entering that scene and pauses it on leaving.
+The page doesn't scroll as one document. Each of the five parts (intro, dedication, slideshow, the catch, gallery) is wrapped in a `.scene` div in `index.html`. `script.js` adds `.scenes` to `<html>`, which turns every scene into a fixed full-screen layer, with only `.is-active` visible. Wheel, touch swipe, keyboard and nav links fade to the next or previous scene. A scene taller than the screen scrolls inside itself and only fades once it reaches its top or bottom. All scene CSS is scoped under `.scenes`, so without JS the page falls back to normal scrolling. When adding a section, wrap it in `<div class="scene" data-anchor="<id>">`. The `#catch` video has no `autoplay`; the scene code plays it on entering that scene and pauses it on leaving.
 
 ## Slideshow mechanism
 
@@ -32,7 +32,8 @@ The page doesn't scroll as one document. Each of the four parts (intro, dedicati
 - Adding/removing a slide = adding/removing a file in `media/slideshow/`; no code change.
 - Order is a natural-sort by filename, so files use numeric prefixes (`01_…`, `02_…`, `50_…`).
 - Images (jpg/png/gif/webp/avif) autoplay on a 6s timer; videos (mp4/webm/mov/m4v) play muted and advance on `ended` instead of the timer.
-- Clicking an image opens the lightbox (wheel zoom toward cursor, drag-to-pan, Esc/click-out to close).
+- The `#gallery` grid (4 columns) is built from the same listing, images only, so it needs no separate upkeep.
+- Clicking an image (in the slideshow or grid) opens the lightbox (wheel zoom toward cursor, drag-to-pan, Esc/click-out to close).
 - If the folder is moved or autoindex is disabled, the slideshow breaks — update both `DIR` in `script.js` and the nginx `location`.
 
 The `#catch` section plays `media/videos/scout_good_catch.mp4`; if it fails to load, `script.js` adds `.is-empty` to `#video-shell` to show a placeholder.
