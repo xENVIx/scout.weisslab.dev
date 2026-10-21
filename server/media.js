@@ -7,7 +7,9 @@
    request body. Each file also has two checkboxes, kept as plain lists the
    page reads (one filename per line): not_in_gallery.txt names images left
    out of the gallery (every image is in it unless listed), slideshow.txt names files in
-   the slideshow (nothing is unless listed). page_files.txt names the files
+   the slideshow (nothing is unless listed). memorial.txt is the Memorial
+   section's text, edited in a box at the bottom of the page (paragraphs
+   separated by blank lines). page_files.txt names the files
    index.html uses directly ("intro=<file>", "catch=<file>"); renaming one
    here updates it, and script.js picks up the new name. nginx proxies /media-admin here;
    see server/README.md for the systemd unit and nginx config. */
@@ -26,7 +28,8 @@ var ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 var MEDIA_ROOT = process.env.MEDIA_ROOT || path.join(__dirname, "..", "media");
 
 var MAX_UPLOAD = 1024 * 1024 * 1024; // 1 GB per file
-var MAX_FORM = 16 * 1024;
+var MAX_FORM = 64 * 1024;
+var MAX_MEMORIAL = 20000; // characters
 var SESSION_MS = 30 * 24 * 60 * 60e3; // stay signed in for 30 days
 var LOGIN_LIMIT = 10;                 // wrong passwords per visitor...
 var LOGIN_WINDOW_MS = 15 * 60e3;      // ...per 15 minutes
@@ -38,6 +41,7 @@ var KINDS = [["image", "Images"], ["gif", "GIFs"], ["video", "Videos"], ["other"
 // The files the page uses directly live in PAGE_LIST, by role; deleting one
 // leaves a gap on the page.
 var PAGE_LIST = "page_files.txt";
+var MEMORIAL_FILE = "memorial.txt";
 var ROLES = { intro: "the intro photo", "catch": "the catch video" };
 var GALLERY_OUT_LIST = "not_in_gallery.txt";
 var SLIDES_LIST = "slideshow.txt";
@@ -59,7 +63,7 @@ function filePath(name) { return path.join(MEDIA_ROOT, name); }
 
 function listFiles() {
   return fs.readdirSync(MEDIA_ROOT, { withFileTypes: true })
-    .filter(function (d) { return d.isFile() && d.name.charAt(0) !== "." && [GALLERY_OUT_LIST, SLIDES_LIST, PAGE_LIST].indexOf(d.name) < 0; })
+    .filter(function (d) { return d.isFile() && d.name.charAt(0) !== "." && [GALLERY_OUT_LIST, SLIDES_LIST, PAGE_LIST, MEMORIAL_FILE].indexOf(d.name) < 0; })
     .map(function (d) { return { name: d.name, size: fs.statSync(filePath(d.name)).size }; })
     .sort(function (a, b) { return naturalCompare(a.name, b.name); });
 }
@@ -270,6 +274,22 @@ function action(req, res) {
   readForm(req, function (f) {
     var msg = "";
     var exists = validFile(f.file) && fs.existsSync(filePath(f.file));
+    if (f.action === "memorial") {
+      // Tidy line endings and stray spaces; blank lines separate paragraphs.
+      var text = String(f.text || "").replace(/\r\n?/g, "\n").split(/\n\s*\n/)
+        .map(function (p) { return p.replace(/[ \t]+\n/g, "\n").trim(); }).filter(Boolean).join("\n\n");
+      if (!text) msg = "The memorial text can't be empty.";
+      else if (text.length > MAX_MEMORIAL) msg = "That's too long (" + MAX_MEMORIAL + " characters max).";
+      else {
+        try {
+          var tmp = filePath("." + MEMORIAL_FILE + ".tmp");
+          fs.writeFileSync(tmp, text + "\n");
+          fs.renameSync(tmp, filePath(MEMORIAL_FILE));
+          msg = "Saved the memorial text.";
+        } catch (e) { console.error(e); msg = "Couldn't save the memorial text: " + e.code; }
+      }
+      return send(res, 303, "", { Location: "/media-admin?msg=" + encodeURIComponent(msg) + "#memorial" });
+    }
     // The checkboxes save in the background and get JSON back.
     if (f.action === "flags") {
       if (!exists) return json(res, 400, { error: "That file is gone." });
@@ -315,6 +335,8 @@ function adminPage(req, res, query) {
   var msg = query.get("msg");
   var galleryOut = readList(GALLERY_OUT_LIST);
   var slidesList = readList(SLIDES_LIST);
+  var memorial = "";
+  try { memorial = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8").trim(); } catch (e) { if (e.code !== "ENOENT") throw e; }
 
   function row(f) {
     var url = "/media/" + encodeURIComponent(f.name);
@@ -376,14 +398,22 @@ function adminPage(req, res, query) {
     'button{font:600 13px system-ui,sans-serif;padding:8px 14px;border-radius:999px;border:1px solid #DBC8AE;background:#FAF4EA;cursor:pointer;color:#2B211B}' +
     'button.primary{background:#A8571F;border-color:#A8571F;color:#FFF8EC}button.delete{color:#9b2c2c}' +
     '@media(max-width:520px){.file{flex-direction:column}.thumb{flex-basis:auto;width:100%;height:180px}}' +
+    '.memorial textarea{box-sizing:border-box;width:100%;min-height:340px;font:17px/1.6 Georgia,serif;padding:12px 14px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;color:#2B211B;resize:vertical;margin-bottom:10px}' +
+    '.jump{font:14px system-ui,sans-serif;margin:-4px 0 0}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
     '</style></head><body><main><form method="post" action="/media-admin/logout" class="out"><button>Sign out</button></form><h1>Scout’s media</h1>' +
+    '<p class="jump"><a href="#memorial">Edit the memorial text \u2193</a></p>' +
     (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') +
     '<h2>Upload</h2>' +
     '<label class="drop" id="drop">Drop photos or videos here, or click to choose' +
     '<input type="file" id="pick" multiple accept="image/*,video/*,.mov,.m4v"></label><div id="progress"></div>' +
     note +
     '<div class="listhead"><h2>All media (' + files.length + ')</h2>' + toggle + '</div>' + rows +
+    '<h2 id="memorial">Memorial text</h2>' +
+    '<p class="hint">This is the text in the Memorial section. Leave a blank line between paragraphs; the first paragraph gets the large first letter.</p>' +
+    '<form method="post" class="memorial"><input type="hidden" name="action" value="memorial">' +
+    '<textarea name="text" aria-label="Memorial text" maxlength="' + MAX_MEMORIAL + '">' + esc(memorial) + '</textarea>' +
+    '<button class="primary">Save memorial text</button></form>' +
     '</main><script>' + clientScript() + '</script></body></html>';
   var headers = { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" };
   if (cookie) headers["Set-Cookie"] = cookie;

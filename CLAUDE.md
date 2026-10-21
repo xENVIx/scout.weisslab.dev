@@ -40,6 +40,10 @@ The page doesn't scroll as one document. Each of the six parts (intro, dedicatio
 
 The `#catch` section plays `media/scout_good_catch.mp4`; if it fails to load, `script.js` adds `.is-empty` to `#video-shell` to show a placeholder.
 
+## Memorial text
+
+The `#dedication` paragraphs come from `media/memorial.txt` (paragraphs separated by blank lines), which the owner edits in the "Memorial text" box at `/media-admin`. `index.html` keeps a copy as the no-JS fallback; `script.js` replaces it with the file's text (always via `textContent`) when they differ. To change the text, edit `memorial.txt`; if you also edit the fallback in `index.html`, keep the two in sync.
+
 ## Messages
 
 Visitors post to `/api/messages` and posts are held as pending. The owner approves them at `/messages-admin` (basic auth, password in `/etc/scout-messages.env`), and only approved messages are returned to the page. Message text is always rendered with `textContent`, never as HTML.

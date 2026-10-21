@@ -597,6 +597,31 @@
     .catch(function () {});
 })();
 
+/* The Memorial section's text lives in media/memorial.txt (edited at
+   /media-admin), paragraphs separated by blank lines. index.html holds a copy
+   as the fallback; this replaces it when the file says something different.
+   Always set as text, never HTML. */
+(function memorialText() {
+  var section = document.getElementById("dedication");
+  if (!section) return;
+  fetch("media/memorial.txt", { cache: "no-cache" })
+    .then(function (r) { return r.ok ? r.text() : ""; })
+    .then(function (t) {
+      var paras = t.replace(/\r\n?/g, "\n").split(/\n\s*\n/)
+        .map(function (p) { return p.trim(); }).filter(Boolean);
+      if (!paras.length) return;
+      var now = Array.prototype.map.call(section.querySelectorAll("p"), function (p) { return p.textContent.trim(); });
+      if (now.join("\n\n") === paras.join("\n\n")) return;
+      section.textContent = "";
+      paras.forEach(function (text) {
+        var p = document.createElement("p");
+        p.textContent = text;
+        section.appendChild(p);
+      });
+    })
+    .catch(function () {});
+})();
+
 /* Messages: visitors leave a note for Scout. New messages are held until
    approved at /messages-admin (server/messages.js), so the form only says
    thanks; the list shows already-approved messages, newest first. */
