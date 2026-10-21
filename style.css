@@ -360,6 +360,20 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 }
 .lightbox-close:hover { background: rgba(0,0,0,.6); }
 
+/* ---- music ----
+   Bandcamp's slim player, pinned bottom-right above the scenes and below
+   the lightbox. */
+.music {
+  position: fixed; right: 16px; bottom: 16px; z-index: 600;
+  width: min(320px, calc(100vw - 92px));
+  background: #fff; border: 1px solid var(--rule); border-radius: 4px;
+  box-shadow: 0 6px 20px rgba(64,42,25,.12);
+  overflow: hidden;
+}
+.music iframe { display: block; border: 0; width: 100%; height: 42px; }
+/* Room under each scene so the player never covers its last lines. */
+.scenes .scene { padding-bottom: 74px; }
+
 footer { border-top: 1px solid var(--rule); }
 footer .mid { padding: clamp(40px,6vw,72px) clamp(20px,5vw,48px); text-align: center; }
 footer .name { font-size: clamp(26px,3.6vw,38px); font-weight: 300; font-style: italic; color: #33271F; }
