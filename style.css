@@ -361,8 +361,9 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 .lightbox-close:hover { background: rgba(0,0,0,.6); }
 
 /* ---- scene clips ----
-   The full-screen transition into a scene with data-clip (script.js). The
-   paper backdrop hides both scenes; the clip sits on it at 75% opacity. */
+   The transition into a scene with data-clip (script.js). The paper backdrop
+   hides both scenes; the clip sits in the middle at 75% opacity, cropped to
+   a square and faded out toward the edges in a circle. */
 .scene-clip {
   position: fixed; inset: 0; z-index: 700;
   background-color: var(--paper);
@@ -370,9 +371,12 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
   transition: opacity 250ms ease, visibility 0s linear 250ms;
 }
 .scene-clip.show { opacity: 1; visibility: visible; transition: opacity 250ms ease, visibility 0s; }
+.scene-clip { display: grid; place-items: center; }
 .scene-clip img, .scene-clip video {
-  display: block; width: 100%; height: 100%;
+  display: block; width: min(80vmin, 560px); aspect-ratio: 1;
   object-fit: cover; opacity: .75;
+  -webkit-mask-image: radial-gradient(circle closest-side, #000 45%, transparent 100%);
+  mask-image: radial-gradient(circle closest-side, #000 45%, transparent 100%);
 }
 
 footer { border-top: 1px solid var(--rule); }
