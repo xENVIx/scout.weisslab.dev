@@ -14,7 +14,8 @@
    every scene after the intro (the intro has .topnav instead).
 
    A scene with data-clip="<gif or video>" (and data-clip-ms, how long to
-   show it) plays that clip over the fade whenever you arrive at it. */
+   show it) uses that clip as the transition whenever you arrive at it: it
+   fills the screen, hiding both scenes, and input waits until it's done. */
 (function scenes() {
   var list = Array.prototype.slice.call(document.querySelectorAll(".scene"));
   var sidenav = document.getElementById("sidenav");
@@ -25,7 +26,7 @@
   var SHIFT = 24;          // px of vertical drift during the fade
   var LOCK_MS = 1000;      // ignore further input while a fade runs
   var SETTLE_MS = 160;     // a scene must sit still this long at its edge before fading
-  var CLIP_DELAY_MS = 200; // start the clip partway into the fade
+  var CLIP_DELAY_MS = 0;   // when the clip starts, relative to the fade
   var current = 0;
   var lockUntil = 0;
   var lastScrollAt = 0;
@@ -65,6 +66,7 @@
     clip.textContent = "";
     clip.appendChild(media);
     var ms = Number(scene.getAttribute("data-clip-ms")) || 2000;
+    lockUntil = Math.max(lockUntil, Date.now() + CLIP_DELAY_MS + ms);
     clipTimers.push(setTimeout(function () { clip.classList.add("show"); }, CLIP_DELAY_MS));
     clipTimers.push(setTimeout(stopClip, CLIP_DELAY_MS + ms));
   }

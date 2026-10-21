@@ -361,23 +361,18 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 .lightbox-close:hover { background: rgba(0,0,0,.6); }
 
 /* ---- scene clips ----
-   A short clip shown over the fade into a scene with data-clip (script.js).
-   It never takes clicks, so it can't get in the way. */
+   The full-screen transition into a scene with data-clip (script.js). The
+   paper backdrop hides both scenes; the clip sits on it at 75% opacity. */
 .scene-clip {
-  position: fixed; left: 50%; top: 50%; z-index: 700;
-  width: min(420px, 70vw);
-  transform: translate(-50%, -46%) scale(.96);
+  position: fixed; inset: 0; z-index: 700;
+  background-color: var(--paper);
   opacity: 0; visibility: hidden; pointer-events: none;
-  transition: opacity 300ms ease, transform 300ms ease, visibility 0s linear 300ms;
+  transition: opacity 250ms ease, visibility 0s linear 250ms;
 }
-.scene-clip.show {
-  opacity: 1; visibility: visible; transform: translate(-50%, -50%);
-  transition: opacity 300ms ease, transform 400ms cubic-bezier(.2,.7,.3,1), visibility 0s;
-}
+.scene-clip.show { opacity: 1; visibility: visible; transition: opacity 250ms ease, visibility 0s; }
 .scene-clip img, .scene-clip video {
-  display: block; width: 100%; height: auto;
-  border-radius: 6px; border: 4px solid #fff;
-  box-shadow: 0 24px 60px rgba(64,42,25,.28);
+  display: block; width: 100%; height: 100%;
+  object-fit: cover; opacity: .75;
 }
 
 footer { border-top: 1px solid var(--rule); }
