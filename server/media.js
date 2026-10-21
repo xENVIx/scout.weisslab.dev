@@ -1,6 +1,6 @@
 /* Media manager for Scout: a tiny dependency-free backend.
 
-   /media-admin (HTTP basic auth, password from ADMIN_PASSWORD) lists every
+   /media-admin (sign in with ADMIN_PASSWORD; a signed cookie keeps you in) lists every
    folder under media/, and lets the owner upload, rename and delete files and
    create or remove folders. Uploads are streamed straight to disk, one file
    per request, with the file as the raw request body. nginx proxies
@@ -22,6 +22,9 @@ var MEDIA_ROOT = process.env.MEDIA_ROOT || path.join(__dirname, "..", "media");
 
 var MAX_UPLOAD = 1024 * 1024 * 1024; // 1 GB per file
 var MAX_FORM = 16 * 1024;
+var SESSION_MS = 30 * 24 * 60 * 60e3; // stay signed in for 30 days
+var LOGIN_LIMIT = 10;                 // wrong passwords per visitor...
+var LOGIN_WINDOW_MS = 15 * 60e3;      // ...per 15 minutes
 var MEDIA_EXT = /\.(jpe?g|png|gif|webp|avif|mp4|webm|mov|m4v)$/i;
 var VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i;
 // Folders the page itself depends on; they can't be removed from here.
@@ -87,17 +90,60 @@ function esc(s) {
 
 function sha(s) { return crypto.createHash("sha256").update(s).digest(); }
 
-function isAdmin(req) {
-  if (!ADMIN_PASSWORD) return false;
-  var m = /^Basic (.+)$/.exec(req.headers.authorization || "");
-  if (!m) return false;
-  var decoded = Buffer.from(m[1], "base64").toString("utf8");
-  var pass = decoded.slice(decoded.indexOf(":") + 1);
-  return crypto.timingSafeEqual(sha(pass), sha(ADMIN_PASSWORD));
+// The session cookie is "<expiry>.<hmac of expiry>", keyed on the password,
+// so changing the password signs everyone out.
+function sign(exp) { return crypto.createHmac("sha256", ADMIN_PASSWORD).update(String(exp)).digest("hex"); }
+
+function sessionCookie() {
+  var exp = Date.now() + SESSION_MS;
+  return "scout_media=" + exp + "." + sign(exp) + "; Path=/media-admin; Max-Age=" + SESSION_MS / 1000 +
+    "; HttpOnly; Secure; SameSite=Strict";
 }
 
-// Browsers send basic-auth credentials automatically, so admin POSTs must
-// come from this site's own pages, not a form on some other site.
+function isAdmin(req) {
+  if (!ADMIN_PASSWORD) return false;
+  var m = /(?:^|;\s*)scout_media=(\d+)\.([0-9a-f]{64})/.exec(req.headers.cookie || "");
+  if (!m || Number(m[1]) < Date.now()) return false;
+  return crypto.timingSafeEqual(Buffer.from(m[2], "hex"), Buffer.from(sign(m[1]), "hex"));
+}
+
+var failures = new Map(); // ip -> [timestamps of wrong passwords]
+
+function login(req, res) {
+  var ip = req.headers["x-real-ip"] || req.socket.remoteAddress || "";
+  var now = Date.now();
+  var list = (failures.get(ip) || []).filter(function (t) { return now - t < LOGIN_WINDOW_MS; });
+  readForm(req, function (f) {
+    if (list.length >= LOGIN_LIMIT) return loginPage(res, "Too many tries. Please wait 15 minutes and try again.");
+    var pass = String(f.password || "").trim();
+    if (ADMIN_PASSWORD && crypto.timingSafeEqual(sha(pass), sha(ADMIN_PASSWORD))) {
+      failures.delete(ip);
+      return send(res, 303, "", { Location: "/media-admin", "Set-Cookie": sessionCookie() });
+    }
+    list.push(now);
+    failures.set(ip, list);
+    loginPage(res, "That password isn't right.");
+  });
+}
+
+function loginPage(res, error) {
+  var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>Scout media</title><style>' +
+    'body{margin:0;padding:24px 20px;background:#FAF4EA;color:#2B211B;font:16px/1.6 Georgia,serif}' +
+    'main{max-width:360px;margin:12vh auto 0}h1{font-weight:400}label{display:block;font:600 13px system-ui,sans-serif;margin-bottom:6px}' +
+    'input{box-sizing:border-box;width:100%;font:16px system-ui,sans-serif;padding:10px 12px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;margin-bottom:14px}' +
+    'button{font:600 15px system-ui,sans-serif;padding:10px 20px;border-radius:999px;border:1px solid #A8571F;background:#A8571F;color:#FFF8EC;cursor:pointer}' +
+    '.err{color:#9b2c2c;font:14px system-ui,sans-serif}' +
+    '</style></head><body><main><h1>Scout’s media</h1>' +
+    (error ? '<p class="err">' + esc(error) + '</p>' : '') +
+    '<form method="post" action="/media-admin/login"><label for="pw">Password</label>' +
+    '<input id="pw" name="password" type="password" autocomplete="current-password" autofocus required>' +
+    '<button>Sign in</button></form></main></body></html>';
+  send(res, error ? 401 : 200, html, { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" });
+}
+
+// Admin POSTs must come from this site's own pages, not a form on some other
+// site (SameSite=Strict already blocks that; this is a second check).
 function sameOrigin(req) {
   var o = req.headers.origin || req.headers.referer || "";
   return o === SITE_ORIGIN || o.indexOf(SITE_ORIGIN + "/") === 0;
@@ -253,7 +299,8 @@ function adminPage(res, query) {
     'button.primary{background:#A8571F;border-color:#A8571F;color:#FFF8EC}button.delete{color:#9b2c2c}' +
     '.folders{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
     '@media(max-width:520px){.file{flex-direction:column}.thumb{flex-basis:auto;width:100%;height:180px}}' +
-    '</style></head><body><main><h1>Scout’s media</h1>' +
+    '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
+    '</style></head><body><main><form method="post" action="/media-admin/logout" class="out"><button>Sign out</button></form><h1>Scout’s media</h1>' +
     (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') +
     '<div class="tabs">' + tabs + '</div>' +
     (dir ? '<h2>Upload to ' + esc(dir) + '</h2>' +
@@ -310,8 +357,15 @@ function clientScript(dir) {
 
 http.createServer(function (req, res) {
   var u = new URL(req.url, "http://x");
-  if (u.pathname !== "/media-admin" && u.pathname !== "/media-admin/upload") return send(res, 404, "Not found");
-  if (!isAdmin(req)) return send(res, 401, "Password required", { "WWW-Authenticate": 'Basic realm="Scout media"' });
+  if (["/media-admin", "/media-admin/upload", "/media-admin/login", "/media-admin/logout"].indexOf(u.pathname) < 0) return send(res, 404, "Not found");
+  if (u.pathname === "/media-admin/login" && req.method === "POST") return sameOrigin(req) ? login(req, res) : send(res, 403, "Forbidden");
+  if (u.pathname === "/media-admin/logout" && req.method === "POST") {
+    return send(res, 303, "", { Location: "/media-admin", "Set-Cookie": "scout_media=; Path=/media-admin; Max-Age=0; HttpOnly; Secure; SameSite=Strict" });
+  }
+  if (!isAdmin(req)) {
+    if (req.method === "GET" && u.pathname === "/media-admin") return loginPage(res, "");
+    return json(res, 401, { error: "You've been signed out. Reload the page and sign in again." });
+  }
   if (req.method === "GET" && u.pathname === "/media-admin") return adminPage(res, u.searchParams);
   if (req.method !== "POST") return send(res, 405, "Method not allowed", { Allow: "GET, POST" });
   if (!sameOrigin(req)) return send(res, 403, "Forbidden");
