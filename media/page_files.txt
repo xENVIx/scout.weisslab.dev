@@ -1,0 +1,2 @@
+intro=02_my_scouty_boy.jpg
+catch=scout_good_catch.mp4

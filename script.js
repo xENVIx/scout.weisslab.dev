@@ -4,7 +4,7 @@
    (autoindex is on for that location in the nginx config). Every image
    and video file found there is a candidate, ordered by filename. Two lists
    in the same folder (one filename per line, kept by /media-admin) pick from
-   them: not_in_gallery.txt names images left out of the gallery grid (all
+   them: not_in_gallery.txt names files left out of the gallery grid (all
    are in it otherwise), and slideshow.txt names the files in the slideshow.
 */
 
@@ -253,6 +253,7 @@
 
   var lightbox = document.getElementById("lightbox");
   var lightboxImg = document.getElementById("lightbox-img");
+  var lightboxVideo = document.getElementById("lightbox-video");
   var lightboxClose = document.getElementById("lightbox-close");
 
   if (!stage) return;
@@ -286,7 +287,7 @@
         return true;
       });
       files.sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }); });
-      buildGrid(files.filter(function (f) { return IMAGE_RE.test(f) && !notInGallery[f]; }));
+      buildGrid(files.filter(function (f) { return !notInGallery[f]; }));
       start(files.filter(function (f) { return inSlideshow[f]; }));
     })
     .catch(function (err) {
@@ -364,23 +365,38 @@
     tick();
   }
 
-  // The Gallery section: every photo from the same folder, as a grid of
-  // square thumbnails that open in the lightbox. Videos are left out.
+  // The Gallery section: photos and videos from the same folder, as a grid
+  // of square thumbnails that open in the lightbox. A video tile shows its
+  // first frame (only its metadata loads until it's opened) and a play badge.
   function buildGrid(files) {
     if (!grid) return;
     files.forEach(function (file) {
+      var isVideo = VIDEO_RE.test(file);
       var b = document.createElement("button");
       b.type = "button";
-      b.setAttribute("aria-label", "Open photo");
-      var img = document.createElement("img");
-      img.src = DIR + file;
-      img.alt = "Scout";
-      img.loading = "lazy";
-      b.appendChild(img);
-      b.addEventListener("click", function () { openLightbox(img.src); });
+      b.setAttribute("aria-label", isVideo ? "Play video" : "Open photo");
+      var thumb;
+      if (isVideo) {
+        thumb = document.createElement("video");
+        thumb.src = DIR + encodeURIComponent(file) + "#t=0.1";
+        thumb.muted = true;
+        thumb.playsInline = true;
+        thumb.preload = "metadata";
+        var badge = document.createElement("span");
+        badge.className = "play";
+        badge.setAttribute("aria-hidden", "true");
+        b.appendChild(badge);
+      } else {
+        thumb = document.createElement("img");
+        thumb.src = DIR + file;
+        thumb.alt = "Scout";
+        thumb.loading = "lazy";
+      }
+      b.insertBefore(thumb, b.firstChild);
+      b.addEventListener("click", function () { openLightbox(DIR + encodeURIComponent(file), isVideo); });
       grid.appendChild(b);
     });
-    if (!grid.children.length) grid.innerHTML = '<div class="ss-empty">No photos yet.</div>';
+    if (!grid.children.length) grid.innerHTML = '<div class="ss-empty">Nothing in the gallery yet.</div>';
   }
 
   function show() {
@@ -438,15 +454,25 @@
       lightboxImg.style.width = Math.round(baseW * zoom) + "px";
     }
   }
-  function openLightbox(src) {
+  // Videos open in the same lightbox, playing with sound and controls;
+  // zoom and pan are for photos only (baseW stays 0 for a video).
+  function openLightbox(src, isVideo) {
     if (!lightbox || !lightboxImg) return;
     zoom = 1;
     baseW = 0;
     lightboxImg.style.width = "";
     lightbox.classList.remove("zoomed");
-    lightboxImg.src = src;
+    lightboxImg.hidden = !!isVideo;
+    if (lightboxVideo) lightboxVideo.hidden = !isVideo;
     lightbox.hidden = false;
     clearTimeout(timer);
+    if (isVideo && lightboxVideo) {
+      lightboxVideo.src = src;
+      var p = lightboxVideo.play();
+      if (p && p.catch) p.catch(function () {});
+      return;
+    }
+    lightboxImg.src = src;
     if (lightboxImg.complete) measureBase();
     else lightboxImg.onload = measureBase;
   }
@@ -456,11 +482,16 @@
     lightbox.classList.remove("zoomed");
     lightboxImg.style.width = "";
     lightboxImg.src = "";
+    if (lightboxVideo && lightboxVideo.getAttribute("src")) {
+      lightboxVideo.pause();
+      lightboxVideo.removeAttribute("src");
+      lightboxVideo.load();
+    }
     tick();
   }
   if (lightbox) {
     lightbox.addEventListener("click", function (e) {
-      if (e.target !== lightboxImg) closeLightbox();
+      if (e.target !== lightboxImg && e.target !== lightboxVideo) closeLightbox();
     });
     lightbox.addEventListener("dblclick", function (e) {
       if (e.target !== lightboxImg) return;
@@ -525,6 +556,37 @@
   function empty() { shell.classList.add("is-empty"); v.removeAttribute("controls"); }
   v.addEventListener("error", empty);
   if (v.networkState === 3) empty();
+})();
+
+/* The intro photo and the catch video are named in media/page_files.txt
+   ("intro=<file>", "catch=<file>"), which /media-admin updates when either
+   is renamed. index.html carries the names they had when it was written, so
+   usually nothing changes here; after a rename this swaps the new name in. */
+(function pageFiles() {
+  var hero = document.querySelector("#top .frame img");
+  var v = document.getElementById("frisbee");
+  var shell = document.getElementById("video-shell");
+  function differs(el, name) {
+    var src = el.getAttribute("src");
+    return src !== "media/" + name && src !== "media/" + encodeURIComponent(name);
+  }
+  fetch("media/page_files.txt", { cache: "no-cache" })
+    .then(function (r) { return r.ok ? r.text() : ""; })
+    .then(function (t) {
+      var names = {};
+      t.split("\n").forEach(function (l) {
+        var m = /^\s*(\w+)\s*=\s*(.+?)\s*$/.exec(l);
+        if (m) names[m[1]] = m[2];
+      });
+      if (hero && names.intro && differs(hero, names.intro)) hero.src = "media/" + encodeURIComponent(names.intro);
+      if (v && shell && names["catch"] && differs(v, names["catch"])) {
+        shell.classList.remove("is-empty");
+        v.setAttribute("controls", "");
+        v.src = "media/" + encodeURIComponent(names["catch"]);
+        if (v.closest(".scene.is-active")) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+      }
+    })
+    .catch(function () {});
 })();
 
 /* Messages: visitors leave a note for Scout. New messages are held until

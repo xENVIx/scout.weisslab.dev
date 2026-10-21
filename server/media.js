@@ -7,7 +7,9 @@
    request body. Each file also has two checkboxes, kept as plain lists the
    page reads (one filename per line): not_in_gallery.txt names images left
    out of the gallery (every image is in it unless listed), slideshow.txt names files in
-   the slideshow (nothing is unless listed). nginx proxies /media-admin here;
+   the slideshow (nothing is unless listed). page_files.txt names the files
+   index.html uses directly ("intro=<file>", "catch=<file>"); renaming one
+   here updates it, and script.js picks up the new name. nginx proxies /media-admin here;
    see server/README.md for the systemd unit and nginx config. */
 
 "use strict";
@@ -33,9 +35,10 @@ var VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i;
 var GIF_EXT = /\.gif$/i;
 // How the file list is grouped on the admin page, in this order.
 var KINDS = [["image", "Images"], ["gif", "GIFs"], ["video", "Videos"], ["other", "Other files"]];
-// Files index.html points at directly, and what for. They can't be renamed
-// here, and deleting one leaves a gap on the page.
-var IN_USE = { "02_my_scouty_boy.jpg": "the intro photo", "scout_good_catch.mp4": "the catch video" };
+// The files the page uses directly live in PAGE_LIST, by role; deleting one
+// leaves a gap on the page.
+var PAGE_LIST = "page_files.txt";
+var ROLES = { intro: "the intro photo", "catch": "the catch video" };
 var GALLERY_OUT_LIST = "not_in_gallery.txt";
 var SLIDES_LIST = "slideshow.txt";
 
@@ -56,7 +59,7 @@ function filePath(name) { return path.join(MEDIA_ROOT, name); }
 
 function listFiles() {
   return fs.readdirSync(MEDIA_ROOT, { withFileTypes: true })
-    .filter(function (d) { return d.isFile() && d.name.charAt(0) !== "." && d.name !== GALLERY_OUT_LIST && d.name !== SLIDES_LIST; })
+    .filter(function (d) { return d.isFile() && d.name.charAt(0) !== "." && [GALLERY_OUT_LIST, SLIDES_LIST, PAGE_LIST].indexOf(d.name) < 0; })
     .map(function (d) { return { name: d.name, size: fs.statSync(filePath(d.name)).size }; })
     .sort(function (a, b) { return naturalCompare(a.name, b.name); });
 }
@@ -88,6 +91,31 @@ function setFlag(name, file, on) {
   var list = readList(name).filter(function (f) { return f !== file; });
   if (on) list.push(file);
   writeList(name, list);
+}
+
+// role -> filename, from PAGE_LIST's "role=file" lines.
+function pageFiles() {
+  var out = {};
+  readList(PAGE_LIST).forEach(function (l) {
+    var m = /^(\w+)\s*=\s*(.+)$/.exec(l);
+    if (m && ROLES[m[1]]) out[m[1]] = m[2];
+  });
+  return out;
+}
+
+// What the page uses file for ("the intro photo"), or "".
+function pageUse(file) {
+  var roles = pageFiles();
+  return Object.keys(roles).filter(function (r) { return roles[r] === file; }).map(function (r) { return ROLES[r]; }).join(" and ");
+}
+
+function renamePageFile(file, to) {
+  var roles = pageFiles(), changed = false;
+  Object.keys(roles).forEach(function (r) { if (roles[r] === file) { roles[r] = to; changed = true; } });
+  if (!changed) return;
+  var tmp = filePath("." + PAGE_LIST + ".tmp");
+  fs.writeFileSync(tmp, Object.keys(roles).map(function (r) { return r + "=" + roles[r] + "\n"; }).join(""));
+  fs.renameSync(tmp, filePath(PAGE_LIST));
 }
 
 // After a delete (or rename), drop the old name from both lists (or carry
@@ -246,7 +274,7 @@ function action(req, res) {
     if (f.action === "flags") {
       if (!exists) return json(res, 400, { error: "That file is gone." });
       try {
-        if (kindOf(f.file) !== "video") setFlag(GALLERY_OUT_LIST, f.file, f.gallery !== "1");
+        setFlag(GALLERY_OUT_LIST, f.file, f.gallery !== "1");
         setFlag(SLIDES_LIST, f.file, f.slideshow === "1");
       } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
       return json(res, 200, { ok: true });
@@ -259,10 +287,9 @@ function action(req, res) {
         var to = cleanName(f.to);
         if (!MEDIA_EXT.test(to)) to += path.extname(f.file || "");
         if (!exists) msg = "That file is gone.";
-        else if (IN_USE[f.file]) msg = f.file + " is " + IN_USE[f.file] + ", so it keeps its name.";
         else if (!validFile(to)) msg = "That name won't work; keep the file extension and use letters, numbers, spaces, . _ - ( ).";
         else if (to !== f.file && fs.existsSync(filePath(to))) msg = "There's already a file called " + to + ".";
-        else if (to !== f.file) { fs.renameSync(filePath(f.file), filePath(to)); forgetFile(f.file, to); msg = "Renamed to " + to + "."; }
+        else if (to !== f.file) { fs.renameSync(filePath(f.file), filePath(to)); forgetFile(f.file, to); renamePageFile(f.file, to); msg = "Renamed to " + to + "."; }
       }
     } catch (e) {
       console.error(e);
@@ -294,14 +321,14 @@ function adminPage(req, res, query) {
     var thumb = VIDEO_EXT.test(f.name)
       ? '<video src="' + esc(url) + '#t=0.5" preload="metadata" muted></video>'
       : MEDIA_EXT.test(f.name) ? '<img src="' + esc(url) + '" loading="lazy" alt="">' : '<span class="nothumb">file</span>';
-    var inUse = IN_USE[f.name];
+    var inUse = pageUse(f.name);
     var hidden = '<input type="hidden" name="file" value="' + esc(f.name) + '">';
     return '<div class="file" data-order="' + f.order + '" data-kind="' + kindOf(f.name) + '"><a class="thumb" href="' + esc(url) + '" target="_blank">' + thumb + '</a>' +
       '<div class="info"><div class="name">' + esc(f.name) + '</div><div class="meta">' + fmtSize(f.size) +
       ' · <span class="where"></span>' + (inUse ? ' · <b>' + esc(inUse) + '</b>' : '') + '</div>' +
-      flagBoxes(f.name, kindOf(f.name) === "video" ? null : galleryOut.indexOf(f.name) < 0, slidesList.indexOf(f.name) >= 0) +
-      (inUse ? '' : '<form method="post" class="row">' + hidden + '<input type="hidden" name="action" value="rename">' +
-        '<input name="to" value="' + esc(f.name) + '" aria-label="New name"><button>Rename</button></form>') +
+      flagBoxes(f.name, galleryOut.indexOf(f.name) < 0, slidesList.indexOf(f.name) >= 0) +
+      '<form method="post" class="row">' + hidden + '<input type="hidden" name="action" value="rename">' +
+      '<input name="to" value="' + esc(f.name) + '" aria-label="New name"><button>Rename</button></form>' +
       '<form method="post" data-confirm="Delete ' + esc(f.name) + '?' + (inUse ? ' It\u2019s ' + esc(inUse) + ', which will show an empty spot without it.' : '') + '">' +
       hidden + '<button name="action" value="delete" class="delete">Delete</button></form></div></div>';
   }
@@ -320,7 +347,7 @@ function adminPage(req, res, query) {
   };
   var toggle = files.length ? '<div class="view">' + viewLink("type", "By type") + viewLink("order", "Display order") + '</div>' : '';
 
-  var note = '<p class="hint"><b>Gallery</b> puts a photo or GIF in the gallery grid; <b>Slideshow</b> puts a photo, GIF or video in the slideshow. New uploads are in the gallery but not the slideshow. Both play in filename order, so start names with numbers (01_, 02_, …) and rename to reorder.</p>';
+  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> puts it in the slideshow. New uploads are in the gallery but not the slideshow. Both play in filename order, so start names with numbers (01_, 02_, …) and rename to reorder.</p>';
 
   var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<title>Scout media</title><style>' +
@@ -363,10 +390,9 @@ function adminPage(req, res, query) {
   send(res, 200, html, headers);
 }
 
-// gallery is null for videos, which never go in the gallery grid.
 function flagBoxes(file, gallery, slides) {
   return '<div class="flags" data-file="' + esc(file) + '">' +
-    (gallery === null ? '' : '<label><input type="checkbox" class="flag-gallery"' + (gallery ? ' checked' : '') + '> Gallery</label>') +
+    '<label><input type="checkbox" class="flag-gallery"' + (gallery ? ' checked' : '') + '> Gallery</label>' +
     '<label><input type="checkbox" class="flag-slides"' + (slides ? ' checked' : '') + '> Slideshow</label>' +
     '<span class="saved" aria-live="polite"></span></div>';
 }
@@ -374,7 +400,7 @@ function flagBoxes(file, gallery, slides) {
 function clientScript() {
   return '(function () {' +
     // Label each file with where it shows up, the way script.js picks:
-    // gallery = ticked images and GIFs, slideshow = ticked files, both
+    // gallery and slideshow = their ticked files, both
     // in filename order.
     'function renumber() {' +
     '  var rows = Array.prototype.slice.call(document.querySelectorAll(".file[data-order]"));' +
