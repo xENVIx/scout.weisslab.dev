@@ -26,19 +26,24 @@ Not used by `index.html` (artifacts of earlier tooling/iterations — don't edit
 
 ## Scenes (fade between sections)
 
-The page doesn't scroll as one document. Each of the six parts (intro, dedication, slideshow, the catch, gallery, messages) is wrapped in a `.scene` div in `index.html`. `script.js` adds `.scenes` to `<html>`, which turns every scene into a fixed full-screen layer, with only `.is-active` visible. Wheel, touch swipe, keyboard and nav links fade to the next or previous scene. A scene taller than the screen scrolls inside itself and only fades once it reaches its top or bottom. All scene CSS is scoped under `.scenes`, so without JS the page falls back to normal scrolling. When adding a section, wrap it in `<div class="scene" data-anchor="<id>">`. The `#catch` video has no `autoplay`; the scene code plays it on entering that scene and pauses it on leaving. A scene can carry `data-clip="<gif or video path>"` and `data-clip-ms` to use that clip as a transition (`.scene-clip`: the old scene fades out, the clip fades in centred in a soft circle at 75% opacity, fades out, then the new scene fades in via an inline transition-delay; input locked until it ends) whenever you arrive at it; it's skipped on the first load and with reduced motion. No scene uses it right now; to try it, e.g. `data-clip="media/04_BARKY_SCOUT.gif" data-clip-ms="2640"` on the slideshow scene.
+The page doesn't scroll as one document. Each of the six parts (intro, dedication, slideshow, the catch, gallery, messages) is wrapped in a `.scene` div in `index.html`. `script.js` adds `.scenes` to `<html>`, which turns every scene into a fixed full-screen layer, with only `.is-active` visible. Wheel, touch swipe, keyboard and nav links fade to the next or previous scene. A scene taller than the screen scrolls inside itself and only fades once it reaches its top or bottom. All scene CSS is scoped under `.scenes`, so without JS the page falls back to normal scrolling. When adding a section, wrap it in `<div class="scene" data-anchor="<id>">`; `script.js` also adds a `.scene-dots` dot for it on the right edge, named after its `.sidenav` link. The `#catch` video has no `autoplay`; the scene code plays it on entering that scene and pauses it on leaving. A scene can carry `data-clip="<gif or video path>"` and `data-clip-ms` to use that clip as a transition (`.scene-clip`: the old scene fades out, the clip fades in centred in a soft circle at 75% opacity, fades out, then the new scene fades in via an inline transition-delay; input locked until it ends) whenever you arrive at it; it's skipped on the first load and with reduced motion. No scene uses it right now; to try it, e.g. `data-clip="media/04_BARKY_SCOUT.gif" data-clip-ms="2640"` on the slideshow scene.
 
 ## Slideshow mechanism
 
 `script.js` fetches `media/` and parses the **nginx autoindex** HTML listing (`autoindex on` for `location /media/` in the nginx config) to discover files. Consequences:
 - Two plain-text lists in `media/` (one filename per line, edited via the Gallery / Slideshow checkboxes at `/media-admin`) decide what's used, independently: `not_in_gallery.txt` = files left out of the gallery (default: in it), `slideshow.txt` = files in the slideshow (default: not). A new upload appears in the gallery but not the slideshow until it's ticked.
-- Order is a natural-sort by filename, so files use numeric prefixes (`01_…`, `02_…`, `50_…`).
-- Images (jpg/png/gif/webp/avif) autoplay on a 6s timer; videos (mp4/webm/mov/m4v) play muted and advance on `ended` instead of the timer.
-- The `#gallery` grid (4 columns) is built from the same listing, photos and videos (minus `not_in_gallery.txt`); video tiles show their first frame with a play badge.
+- Order: `media/order.txt` (one filename per line, set by dragging rows in the "Display order" view at `/media-admin`) comes first; files it doesn't name follow in natural filename order. With no `order.txt`, it's purely by filename.
+- Captions: `media/captions.txt`, `<file>=<caption>` lines, edited per file at `/media-admin`. Shown (as text) under the slideshow (`#slideshow-caption`) and at the bottom of the lightbox.
+- Images (jpg/png/gif/webp/avif) autoplay for 6s; videos (mp4/webm/mov/m4v) play muted and advance on `ended`. The timer is the `.ss-progress` bar's CSS animation (`animationend` advances), so hovering the photo or opening the lightbox pauses it; for a video the bar follows playback.
+- The `#gallery` grid (4 columns, 2 on phones) is built from the same listing, photos and videos (minus `not_in_gallery.txt`), as a masonry layout: 1px grid rows, and `script.js` sets each tile's row span from its picture's shape once it loads. Video tiles show their first frame with a play badge.
 - Clicking an image (in the slideshow or grid) opens the lightbox (wheel zoom toward cursor, drag-to-pan, Esc/click-out to close). A gallery video opens in the same lightbox and plays with sound and controls (no zoom).
 - If the folder is moved or autoindex is disabled, the slideshow breaks — update both `DIR` in `script.js` and the nginx `location`.
 
-The `#catch` section plays `media/scout_good_catch.mp4`; if it fails to load, `script.js` adds `.is-empty` to `#video-shell` to show a placeholder.
+The `#catch` section plays `media/scout_good_catch.mp4`, muted (so it can autoplay); the `#catch-sound` button over its corner toggles the sound. If it fails to load, `script.js` adds `.is-empty` to `#video-shell` to show a placeholder.
+
+## Link previews
+
+`index.html` has Open Graph / Twitter tags pointing at `/share.jpg` (1200×630, a fixed image in the repo root, not in `media/`, so renames can't break it). To change the preview image, replace that file.
 
 ## Memorial text
 

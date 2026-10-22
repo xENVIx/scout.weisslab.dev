@@ -9,7 +9,10 @@
    out of the gallery (every image is in it unless listed), slideshow.txt names files in
    the slideshow (nothing is unless listed). memorial.txt is the Memorial
    section's text, edited in a box at the bottom of the page (paragraphs
-   separated by blank lines). page_files.txt names the files
+   separated by blank lines). captions.txt holds each file's optional
+   caption ("<file>=<caption>"), and order.txt the display order the owner
+   set by dragging (files it doesn't name follow, by filename).
+   page_files.txt names the files
    index.html uses directly ("intro=<file>", "catch=<file>"); renaming one
    here updates it, and script.js picks up the new name. nginx proxies /media-admin here;
    see server/README.md for the systemd unit and nginx config. */
@@ -45,6 +48,11 @@ var MEMORIAL_FILE = "memorial.txt";
 var ROLES = { intro: "the intro photo", "catch": "the catch video" };
 var GALLERY_OUT_LIST = "not_in_gallery.txt";
 var SLIDES_LIST = "slideshow.txt";
+var CAPTIONS_FILE = "captions.txt";
+var ORDER_LIST = "order.txt";
+var MAX_CAPTION = 200; // characters
+// Kept in media/ for the page to read, but not media themselves.
+var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, PAGE_LIST, MEMORIAL_FILE, CAPTIONS_FILE, ORDER_LIST];
 
 // ---- names and paths ----
 
@@ -63,14 +71,24 @@ function filePath(name) { return path.join(MEDIA_ROOT, name); }
 
 function listFiles() {
   return fs.readdirSync(MEDIA_ROOT, { withFileTypes: true })
-    .filter(function (d) { return d.isFile() && d.name.charAt(0) !== "." && [GALLERY_OUT_LIST, SLIDES_LIST, PAGE_LIST, MEMORIAL_FILE].indexOf(d.name) < 0; })
+    .filter(function (d) { return d.isFile() && d.name.charAt(0) !== "." && DATA_FILES.indexOf(d.name) < 0; })
     .map(function (d) { return { name: d.name, size: fs.statSync(filePath(d.name)).size }; })
-    .sort(function (a, b) { return naturalCompare(a.name, b.name); });
+    .sort(displayCompare(readList(ORDER_LIST)));
 }
 
-// Same order the slideshow uses.
 function naturalCompare(a, b) {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+// The order the slideshow and gallery use: files named in ORDER_LIST first,
+// in its order, then the rest by filename.
+function displayCompare(order) {
+  return function (a, b) {
+    var i = order.indexOf(a.name), j = order.indexOf(b.name);
+    if (i < 0) i = Infinity;
+    if (j < 0) j = Infinity;
+    return i !== j ? i - j : naturalCompare(a.name, b.name);
+  };
 }
 
 // ---- show / slideshow lists ----
@@ -82,12 +100,34 @@ function readList(name) {
   } catch (e) { if (e.code !== "ENOENT") throw e; return []; }
 }
 
+// Sorted by filename, except ORDER_LIST, whose order is the point.
 function writeList(name, list) {
   var seen = {};
-  list = list.filter(function (f) { return !seen[f] && (seen[f] = true); }).sort(naturalCompare);
+  list = list.filter(function (f) { return !seen[f] && (seen[f] = true); });
+  if (name !== ORDER_LIST) list.sort(naturalCompare);
+  writeFile(name, list.length ? list.join("\n") + "\n" : "");
+}
+
+// Replace a file in media/ all at once, so the page never reads half of it.
+function writeFile(name, text) {
   var tmp = filePath("." + name + ".tmp");
-  fs.writeFileSync(tmp, list.length ? list.join("\n") + "\n" : "");
+  fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, filePath(name));
+}
+
+// file -> caption, from CAPTIONS_FILE's "file=caption" lines.
+function readCaptions() {
+  var out = {};
+  readList(CAPTIONS_FILE).forEach(function (l) {
+    var i = l.indexOf("=");
+    if (i > 0) out[l.slice(0, i)] = l.slice(i + 1).trim();
+  });
+  return out;
+}
+
+function writeCaptions(caps) {
+  writeFile(CAPTIONS_FILE, Object.keys(caps).filter(function (f) { return caps[f]; }).sort(naturalCompare)
+    .map(function (f) { return f + "=" + caps[f] + "\n"; }).join(""));
 }
 
 // Put file on the named list (on) or take it off.
@@ -117,13 +157,11 @@ function renamePageFile(file, to) {
   var roles = pageFiles(), changed = false;
   Object.keys(roles).forEach(function (r) { if (roles[r] === file) { roles[r] = to; changed = true; } });
   if (!changed) return;
-  var tmp = filePath("." + PAGE_LIST + ".tmp");
-  fs.writeFileSync(tmp, Object.keys(roles).map(function (r) { return r + "=" + roles[r] + "\n"; }).join(""));
-  fs.renameSync(tmp, filePath(PAGE_LIST));
+  writeFile(PAGE_LIST, Object.keys(roles).map(function (r) { return r + "=" + roles[r] + "\n"; }).join(""));
 }
 
-// After a delete (or rename), drop the old name from both lists (or carry
-// its ticks over to the new name).
+// After a delete (or rename), drop the old name from the lists, captions and
+// order (or carry its ticks, caption and place over to the new name).
 function forgetFile(file, renamedTo) {
   [GALLERY_OUT_LIST, SLIDES_LIST].forEach(function (name) {
     var list = readList(name);
@@ -131,6 +169,18 @@ function forgetFile(file, renamedTo) {
     setFlag(name, file, false);
     if (renamedTo) setFlag(name, renamedTo, true);
   });
+  var order = readList(ORDER_LIST), at = order.indexOf(file);
+  if (at >= 0) {
+    if (renamedTo) order[at] = renamedTo;
+    else order.splice(at, 1);
+    writeList(ORDER_LIST, order);
+  }
+  var caps = readCaptions();
+  if (caps[file] !== undefined) {
+    if (renamedTo) caps[renamedTo] = caps[file];
+    delete caps[file];
+    writeCaptions(caps);
+  }
 }
 
 // ---- helpers ----
@@ -282,9 +332,7 @@ function action(req, res) {
       else if (text.length > MAX_MEMORIAL) msg = "That's too long (" + MAX_MEMORIAL + " characters max).";
       else {
         try {
-          var tmp = filePath("." + MEMORIAL_FILE + ".tmp");
-          fs.writeFileSync(tmp, text + "\n");
-          fs.renameSync(tmp, filePath(MEMORIAL_FILE));
+          writeFile(MEMORIAL_FILE, text + "\n");
           msg = "Saved the memorial text.";
         } catch (e) { console.error(e); msg = "Couldn't save the memorial text: " + e.code; }
       }
@@ -297,6 +345,23 @@ function action(req, res) {
         setFlag(GALLERY_OUT_LIST, f.file, f.gallery !== "1");
         setFlag(SLIDES_LIST, f.file, f.slideshow === "1");
       } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
+      return json(res, 200, { ok: true });
+    }
+    if (f.action === "caption") {
+      if (!exists) return json(res, 400, { error: "That file is gone." });
+      var caption = String(f.caption || "").replace(/\s+/g, " ").trim();
+      if (caption.length > MAX_CAPTION) return json(res, 400, { error: "Too long (" + MAX_CAPTION + " characters max)." });
+      try {
+        var caps = readCaptions();
+        caps[f.file] = caption;
+        writeCaptions(caps);
+      } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
+      return json(res, 200, { ok: true });
+    }
+    // The whole display order, one filename per line, after a drag.
+    if (f.action === "order") {
+      var names = String(f.order || "").split("\n").filter(function (n) { return validFile(n) && fs.existsSync(filePath(n)); });
+      try { writeList(ORDER_LIST, names); } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
       return json(res, 200, { ok: true });
     }
     try {
@@ -326,8 +391,8 @@ function kindOf(name) {
 }
 
 function adminPage(req, res, query) {
-  // "type" groups the list by kind; "order" is one list in display order.
-  // The choice sticks in a cookie.
+  // "type" groups the list by kind; "order" is one list in display order,
+  // where rows can be dragged to reorder. The choice sticks in a cookie.
   var view = query.get("view"), cookie = null;
   if (view === "type" || view === "order") cookie = "media_view=" + view + "; Path=/media-admin; Max-Age=31536000; HttpOnly; Secure; SameSite=Strict";
   else view = /(?:^|;\s*)media_view=order/.test(req.headers.cookie || "") ? "order" : "type";
@@ -335,6 +400,7 @@ function adminPage(req, res, query) {
   var msg = query.get("msg");
   var galleryOut = readList(GALLERY_OUT_LIST);
   var slidesList = readList(SLIDES_LIST);
+  var captions = readCaptions();
   var memorial = "";
   try { memorial = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8").trim(); } catch (e) { if (e.code !== "ENOENT") throw e; }
 
@@ -345,21 +411,24 @@ function adminPage(req, res, query) {
       : MEDIA_EXT.test(f.name) ? '<img src="' + esc(url) + '" loading="lazy" alt="">' : '<span class="nothumb">file</span>';
     var inUse = pageUse(f.name);
     var hidden = '<input type="hidden" name="file" value="' + esc(f.name) + '">';
-    return '<div class="file" data-order="' + f.order + '" data-kind="' + kindOf(f.name) + '"><a class="thumb" href="' + esc(url) + '" target="_blank">' + thumb + '</a>' +
+    var grip = view === "order" ? '<button type="button" class="grip" aria-label="Move ' + esc(f.name) + ' (drag, or use the arrow keys)" title="Drag to reorder">⠿</button>' : '';
+    return '<div class="file" data-order="' + f.order + '" data-file="' + esc(f.name) + '" data-kind="' + kindOf(f.name) + '">' + grip +
+      '<a class="thumb" href="' + esc(url) + '" target="_blank">' + thumb + '</a>' +
       '<div class="info"><div class="name">' + esc(f.name) + '</div><div class="meta">' + fmtSize(f.size) +
       ' · <span class="where"></span>' + (inUse ? ' · <b>' + esc(inUse) + '</b>' : '') + '</div>' +
       flagBoxes(f.name, galleryOut.indexOf(f.name) < 0, slidesList.indexOf(f.name) >= 0) +
+      '<div class="row"><input class="caption" value="' + esc(captions[f.name] || "") + '" maxlength="' + MAX_CAPTION + '" placeholder="Caption (optional)" aria-label="Caption for ' + esc(f.name) + '"></div>' +
       '<form method="post" class="row">' + hidden + '<input type="hidden" name="action" value="rename">' +
       '<input name="to" value="' + esc(f.name) + '" aria-label="New name"><button>Rename</button></form>' +
-      '<form method="post" data-confirm="Delete ' + esc(f.name) + '?' + (inUse ? ' It\u2019s ' + esc(inUse) + ', which will show an empty spot without it.' : '') + '">' +
+      '<form method="post" data-confirm="Delete ' + esc(f.name) + '?' + (inUse ? ' It’s ' + esc(inUse) + ', which will show an empty spot without it.' : '') + '">' +
       hidden + '<button name="action" value="delete" class="delete">Delete</button></form></div></div>';
   }
 
-  // listFiles is already in display (filename) order.
+  // listFiles is already in display order.
   files.forEach(function (f, i) { f.order = i; });
   var rows;
   if (!files.length) rows = '<p class="none">No photos or videos yet.</p>';
-  else if (view === "order") rows = files.map(row).join("");
+  else if (view === "order") rows = '<div id="sortable">' + files.map(row).join("") + '</div>';
   else rows = KINDS.map(function (k) {
     var group = files.filter(function (f) { return kindOf(f.name) === k[0]; });
     return group.length ? '<h3>' + k[1] + ' (' + group.length + ')</h3>' + group.map(row).join("") : '';
@@ -369,7 +438,8 @@ function adminPage(req, res, query) {
   };
   var toggle = files.length ? '<div class="view">' + viewLink("type", "By type") + viewLink("order", "Display order") + '</div>' : '';
 
-  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> puts it in the slideshow. New uploads are in the gallery but not the slideshow. Both play in filename order, so start names with numbers (01_, 02_, …) and rename to reorder.</p>';
+  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> puts it in the slideshow. New uploads are in the gallery but not the slideshow, and go at the end. ' +
+    'To change the order, switch to <b>Display order</b> and drag a file by its ⠿ handle. A caption shows under the photo in the slideshow and the enlarged view.</p>';
 
   var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<title>Scout media</title><style>' +
@@ -397,24 +467,30 @@ function adminPage(req, res, query) {
     'input{font:14px system-ui,sans-serif;padding:7px 10px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8}' +
     'button{font:600 13px system-ui,sans-serif;padding:8px 14px;border-radius:999px;border:1px solid #DBC8AE;background:#FAF4EA;cursor:pointer;color:#2B211B}' +
     'button.primary{background:#A8571F;border-color:#A8571F;color:#FFF8EC}button.delete{color:#9b2c2c}' +
-    '@media(max-width:520px){.file{flex-direction:column}.thumb{flex-basis:auto;width:100%;height:180px}}' +
+    '.grip{flex:none;align-self:stretch;width:34px;padding:0;border:0;border-radius:3px;background:#F6EEE2;color:#9b8775;font-size:20px;cursor:grab;touch-action:none}' +
+    '.grip:hover,.grip:focus-visible{background:#EFE2CE;color:#8F4818}' +
+    '.file.dragging{opacity:.75;border-color:#A8571F;box-shadow:0 8px 24px rgba(64,42,25,.18)}.file.dragging .grip{cursor:grabbing}' +
+    '.order-note{font:13px system-ui,sans-serif;color:#6B5748;min-height:1.4em;margin:0}' +
+    '@media(max-width:520px){.file{flex-direction:column}.thumb{flex-basis:auto;width:100%;height:180px}' +
+    '#sortable .file{flex-direction:row;flex-wrap:wrap}#sortable .thumb{flex:1 1 0;height:90px}#sortable .info{flex-basis:100%}.grip{align-self:auto;height:90px}}' +
     '.memorial textarea{box-sizing:border-box;width:100%;min-height:340px;font:17px/1.6 Georgia,serif;padding:12px 14px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;color:#2B211B;resize:vertical;margin-bottom:10px}' +
     '.jump{font:14px system-ui,sans-serif;margin:-4px 0 0}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
     '</style></head><body><main><form method="post" action="/media-admin/logout" class="out"><button>Sign out</button></form><h1>Scout’s media</h1>' +
-    '<p class="jump"><a href="#memorial">Edit the memorial text \u2193</a></p>' +
+    '<p class="jump"><a href="#memorial">Edit the memorial text ↓</a></p>' +
     (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') +
     '<h2>Upload</h2>' +
     '<label class="drop" id="drop">Drop photos or videos here, or click to choose' +
     '<input type="file" id="pick" multiple accept="image/*,video/*,.mov,.m4v"></label><div id="progress"></div>' +
     note +
-    '<div class="listhead"><h2>All media (' + files.length + ')</h2>' + toggle + '</div>' + rows +
+    '<div class="listhead"><h2>All media (' + files.length + ')</h2>' + toggle + '</div>' +
+    (view === "order" && files.length > 1 ? '<p class="order-note" id="order-note" aria-live="polite"></p>' : '') + rows +
     '<h2 id="memorial">Memorial text</h2>' +
     '<p class="hint">This is the text in the Memorial section. Leave a blank line between paragraphs; the first paragraph gets the large first letter.</p>' +
     '<form method="post" class="memorial"><input type="hidden" name="action" value="memorial">' +
     '<textarea name="text" aria-label="Memorial text" maxlength="' + MAX_MEMORIAL + '">' + esc(memorial) + '</textarea>' +
     '<button class="primary">Save memorial text</button></form>' +
-    '</main><script>' + clientScript() + '</script></body></html>';
+    '</main><script>(' + adminClient + ')();</script></body></html>';
   var headers = { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" };
   if (cookie) headers["Set-Cookie"] = cookie;
   send(res, 200, html, headers);
@@ -427,70 +503,168 @@ function flagBoxes(file, gallery, slides) {
     '<span class="saved" aria-live="polite"></span></div>';
 }
 
-function clientScript() {
-  return '(function () {' +
-    // Label each file with where it shows up, the way script.js picks:
-    // gallery and slideshow = their ticked files, both
-    // in filename order.
-    'function renumber() {' +
-    '  var rows = Array.prototype.slice.call(document.querySelectorAll(".file[data-order]"));' +
-    '  rows.sort(function (a, b) { return a.getAttribute("data-order") - b.getAttribute("data-order"); });' +
-    '  var slide = 0, galleryN = 0;' +
-    '  rows.forEach(function (r) {' +
-    '    var where = r.querySelector(".where"), gallery = r.querySelector(".flag-gallery"), slides = r.querySelector(".flag-slides");' +
-    '    if (!where || !slides) return;' +
-    '    var parts = [];' +
-    '    if (slides.checked) parts.push("Slide " + (++slide));' +
-    '    if (gallery && gallery.checked) parts.push("Gallery " + (++galleryN));' +
-    '    where.textContent = parts.length ? parts.join(" · ") : "Not on the page";' +
-    '    where.className = parts.length ? "where" : "where off";' +
-    '  });' +
-    '}' +
-    'renumber();' +
-    'document.querySelectorAll(".flags").forEach(function (box) {' +
-    '  var gallery = box.querySelector(".flag-gallery"), slides = box.querySelector(".flag-slides"), note = box.querySelector(".saved");' +
-    '  function save() {' +
-    '    renumber();' +
-    '    note.className = "saved"; note.textContent = "Saving…";' +
-    '    var body = new URLSearchParams({ action: "flags", file: box.getAttribute("data-file"), gallery: gallery && gallery.checked ? "1" : "", slideshow: slides.checked ? "1" : "" });' +
-    '    fetch("/media-admin", { method: "POST", body: body }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error); }); })' +
-    '      .then(function () { note.textContent = "Saved"; }, function (e) { note.className = "saved err"; note.textContent = (e && e.message) || "Couldn\u2019t save"; });' +
-    '  }' +
-    '  if (gallery) gallery.addEventListener("change", save); slides.addEventListener("change", save);' +
-    '});' +
-    'document.querySelectorAll("form[data-confirm]").forEach(function (f) {' +
-    '  f.addEventListener("submit", function (e) { if (!confirm(f.getAttribute("data-confirm"))) e.preventDefault(); });' +
-    '});' +
-    'var drop = document.getElementById("drop"), pick = document.getElementById("pick"), prog = document.getElementById("progress");' +
-    'if (!drop) return;' +
-    'pick.addEventListener("change", function () { start(pick.files); });' +
-    '["dragenter", "dragover"].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add("over"); }); });' +
-    '["dragleave", "drop"].forEach(function (t) { drop.addEventListener(t, function () { drop.classList.remove("over"); }); });' +
-    'drop.addEventListener("drop", function (e) { e.preventDefault(); start(e.dataTransfer.files); });' +
-    'function start(list) {' +
-    '  var files = Array.prototype.slice.call(list), ok = 0;' +
-    '  (function next() {' +
-    '    var file = files.shift();' +
-    '    if (!file) { if (ok) location.href = "/media-admin?msg=" + encodeURIComponent("Uploaded " + ok + " file" + (ok === 1 ? "" : "s") + "."); return; }' +
-    '    var line = document.createElement("div"); line.textContent = file.name + ": starting…"; prog.appendChild(line);' +
-    '    send(file, false);' +
-    '    function send(file, replace) {' +
-    '      var xhr = new XMLHttpRequest();' +
-    '      xhr.open("POST", "/media-admin/upload?name=" + encodeURIComponent(file.name) + (replace ? "&replace=1" : ""));' +
-    '      xhr.upload.onprogress = function (e) { if (e.lengthComputable) line.textContent = file.name + ": " + Math.round(e.loaded / e.total * 100) + "%"; };' +
-    '      xhr.onload = function () {' +
-    '        var r = {}; try { r = JSON.parse(xhr.responseText); } catch (e) {}' +
-    '        if (xhr.status === 201) { ok++; line.textContent = file.name + ": done"; return next(); }' +
-    '        if (xhr.status === 409 && confirm("There\u2019s already a file called " + r.name + ". Replace it?")) return send(file, true);' +
-    '        line.className = "err"; line.textContent = file.name + ": " + (xhr.status === 409 ? "skipped" : xhr.status === 413 ? "too big (1 GB max)" : r.error || "failed (" + xhr.status + ")");' +
-    '        next();' +
-    '      };' +
-    '      xhr.onerror = function () { line.className = "err"; line.textContent = file.name + ": upload failed"; next(); };' +
-    '      xhr.send(file);' +
-    '    }' +
-    '  })();' +
-    '}' +
-    '})();';
+// Runs in the browser: adminPage inlines its source into the page.
+function adminClient() {
+  // POST a small form in the background; resolves, or rejects with the
+  // server's error message.
+  function post(fields) {
+    return fetch("/media-admin", { method: "POST", body: new URLSearchParams(fields) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error); }); });
+  }
+  function report(note, p) {
+    note.className = "saved"; note.textContent = "Saving…";
+    p.then(function () { note.textContent = "Saved"; },
+      function (e) { note.className = "saved err"; note.textContent = (e && e.message) || "Couldn’t save"; });
+  }
+
+  // Label each file with where it shows up, the way script.js picks:
+  // gallery and slideshow = their ticked files, both in display order.
+  function renumber() {
+    var rows = Array.prototype.slice.call(document.querySelectorAll(".file[data-order]"));
+    rows.sort(function (a, b) { return a.getAttribute("data-order") - b.getAttribute("data-order"); });
+    var slide = 0, galleryN = 0;
+    rows.forEach(function (r) {
+      var where = r.querySelector(".where"), gallery = r.querySelector(".flag-gallery"), slides = r.querySelector(".flag-slides");
+      if (!where || !slides) return;
+      var parts = [];
+      if (slides.checked) parts.push("Slide " + (++slide));
+      if (gallery && gallery.checked) parts.push("Gallery " + (++galleryN));
+      where.textContent = parts.length ? parts.join(" · ") : "Not on the page";
+      where.className = parts.length ? "where" : "where off";
+    });
+  }
+  renumber();
+  document.querySelectorAll(".flags").forEach(function (box) {
+    var gallery = box.querySelector(".flag-gallery"), slides = box.querySelector(".flag-slides"), note = box.querySelector(".saved");
+    function save() {
+      renumber();
+      report(note, post({ action: "flags", file: box.getAttribute("data-file"), gallery: gallery && gallery.checked ? "1" : "", slideshow: slides.checked ? "1" : "" }));
+    }
+    if (gallery) gallery.addEventListener("change", save);
+    slides.addEventListener("change", save);
+  });
+  // Captions save when you leave the box (or press Enter).
+  document.querySelectorAll("input.caption").forEach(function (input) {
+    var file = input.closest(".file").getAttribute("data-file");
+    var note = input.closest(".file").querySelector(".saved");
+    var saved = input.value;
+    input.addEventListener("change", function () {
+      if (input.value === saved) return;
+      var value = input.value;
+      var p = post({ action: "caption", file: file, caption: value });
+      p.then(function () { saved = value; }, function () {});
+      report(note, p);
+    });
+    input.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); input.blur(); } });
+  });
+  document.querySelectorAll("form[data-confirm]").forEach(function (f) {
+    f.addEventListener("submit", function (e) { if (!confirm(f.getAttribute("data-confirm"))) e.preventDefault(); });
+  });
+
+  // Display order view: drag a row by its handle (mouse or finger), or focus
+  // the handle and use the arrow keys. The new order saves when you let go.
+  var sortable = document.getElementById("sortable");
+  var orderNote = document.getElementById("order-note");
+  if (sortable) {
+    var saveOrder = function () {
+      var rows = Array.prototype.slice.call(sortable.querySelectorAll(".file"));
+      rows.forEach(function (r, i) { r.setAttribute("data-order", i); });
+      renumber();
+      orderNote.className = "order-note"; orderNote.textContent = "Saving the new order…";
+      post({ action: "order", order: rows.map(function (r) { return r.getAttribute("data-file"); }).join("\n") })
+        .then(function () { orderNote.textContent = "Order saved."; },
+          function (e) { orderNote.className = "order-note saved err"; orderNote.textContent = (e && e.message) || "Couldn’t save the order."; });
+    };
+    var drag = null, scrollTimer = null;
+    sortable.addEventListener("pointerdown", function (e) {
+      var grip = e.target.closest(".grip");
+      if (!grip || e.button > 0) return;
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      drag = { row: grip.closest(".file"), grip: grip, y: e.clientY, moved: false };
+      drag.row.classList.add("dragging");
+      // Scroll the page while the finger or mouse is near the top or bottom.
+      scrollTimer = setInterval(function () {
+        if (!drag) return;
+        var edge = 70, h = window.innerHeight;
+        if (drag.y < edge) window.scrollBy(0, -Math.ceil((edge - drag.y) / 4));
+        else if (drag.y > h - edge) window.scrollBy(0, Math.ceil((drag.y - (h - edge)) / 4));
+        else return;
+        place();
+      }, 16);
+    });
+    // Move the dragged row to wherever the pointer is among the others.
+    var place = function () {
+      var rows = Array.prototype.slice.call(sortable.querySelectorAll(".file"));
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (r === drag.row) continue;
+        var box = r.getBoundingClientRect();
+        if (drag.y < box.top + box.height / 2) {
+          if (drag.row.nextElementSibling !== r) { sortable.insertBefore(drag.row, r); drag.moved = true; }
+          return;
+        }
+      }
+      if (sortable.lastElementChild !== drag.row) { sortable.appendChild(drag.row); drag.moved = true; }
+    };
+    sortable.addEventListener("pointermove", function (e) {
+      if (!drag) return;
+      drag.y = e.clientY;
+      place();
+    });
+    var endDrag = function () {
+      if (!drag) return;
+      clearInterval(scrollTimer);
+      drag.row.classList.remove("dragging");
+      var moved = drag.moved;
+      drag = null;
+      if (moved) saveOrder();
+    };
+    sortable.addEventListener("pointerup", endDrag);
+    sortable.addEventListener("pointercancel", endDrag);
+    sortable.addEventListener("keydown", function (e) {
+      var grip = e.target.closest(".grip");
+      if (!grip || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+      e.preventDefault();
+      var row = grip.closest(".file");
+      var other = e.key === "ArrowUp" ? row.previousElementSibling : row.nextElementSibling;
+      if (!other) return;
+      sortable.insertBefore(row, e.key === "ArrowUp" ? other : other.nextElementSibling);
+      grip.focus();
+      grip.scrollIntoView({ block: "nearest" });
+      saveOrder();
+    });
+  }
+
+  var drop = document.getElementById("drop"), pick = document.getElementById("pick"), prog = document.getElementById("progress");
+  if (!drop) return;
+  pick.addEventListener("change", function () { start(pick.files); });
+  ["dragenter", "dragover"].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
+  ["dragleave", "drop"].forEach(function (t) { drop.addEventListener(t, function () { drop.classList.remove("over"); }); });
+  drop.addEventListener("drop", function (e) { e.preventDefault(); start(e.dataTransfer.files); });
+  function start(list) {
+    var files = Array.prototype.slice.call(list), ok = 0;
+    (function next() {
+      var file = files.shift();
+      if (!file) { if (ok) location.href = "/media-admin?msg=" + encodeURIComponent("Uploaded " + ok + " file" + (ok === 1 ? "" : "s") + "."); return; }
+      var line = document.createElement("div"); line.textContent = file.name + ": starting…"; prog.appendChild(line);
+      send(file, false);
+      function send(file, replace) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "/media-admin/upload?name=" + encodeURIComponent(file.name) + (replace ? "&replace=1" : ""));
+        xhr.upload.onprogress = function (e) { if (e.lengthComputable) line.textContent = file.name + ": " + Math.round(e.loaded / e.total * 100) + "%"; };
+        xhr.onload = function () {
+          var r = {}; try { r = JSON.parse(xhr.responseText); } catch (e) {}
+          if (xhr.status === 201) { ok++; line.textContent = file.name + ": done"; return next(); }
+          if (xhr.status === 409 && confirm("There’s already a file called " + r.name + ". Replace it?")) return send(file, true);
+          line.className = "err"; line.textContent = file.name + ": " + (xhr.status === 409 ? "skipped" : xhr.status === 413 ? "too big (1 GB max)" : r.error || "failed (" + xhr.status + ")");
+          next();
+        };
+        xhr.onerror = function () { line.className = "err"; line.textContent = file.name + ": upload failed"; next(); };
+        xhr.send(file);
+      }
+    })();
+  }
 }
 
 // ---- routing ----

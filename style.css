@@ -118,11 +118,29 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 .scenes .scene > * { flex: none; }
 .scenes .scene > :last-child { margin-block: auto; }
 .scenes .band { border-top: 0; }
-/* Keep the whole slideshow (header, photo, controls) on one screen. */
-.scenes #slideshow-stage { max-height: calc(100vh - 340px); min-height: 200px; }
+/* Keep the whole slideshow (header, photo, caption, controls) on one screen. */
+.scenes #slideshow-stage { max-height: calc(100vh - 380px); min-height: 200px; }
 @media (prefers-reduced-motion: reduce) {
   .scenes .scene { transform: none !important; }
 }
+/* One dot per scene down the right edge (added by script.js). */
+.scene-dots {
+  position: fixed; right: clamp(8px, 1.6vw, 22px); top: 50%; z-index: 600;
+  transform: translateY(-50%);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.scene-dots button {
+  width: 22px; height: 22px; padding: 0;
+  display: grid; place-items: center;
+  border: none; background: none; cursor: pointer;
+}
+.scene-dots button::after {
+  content: ""; width: 7px; height: 7px; border-radius: 999px;
+  border: 1px solid #B89D7C; background: transparent;
+  transition: background 300ms, border-color 300ms, transform 300ms;
+}
+.scene-dots button:hover::after { border-color: var(--accent); }
+.scene-dots button[aria-current="true"]::after { background: var(--accent); border-color: var(--accent); transform: scale(1.3); }
 
 .hero {
   display: grid;
@@ -209,6 +227,19 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 #slideshow-stage video { pointer-events: none; }
 #slideshow-stage img.is-on,
 #slideshow-stage video.is-on { pointer-events: auto; }
+/* Fills over each photo's time on screen; script.js drives it. */
+.ss-progress {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; height: 3px;
+  background: rgba(219,200,174,.45); pointer-events: none;
+}
+.ss-progress[hidden] { display: none; }
+.ss-progress i { display: block; height: 100%; width: 0; background: var(--accent); opacity: .75; transition: width 260ms linear; }
+@keyframes ss-fill { from { width: 0; } to { width: 100%; } }
+.ss-caption {
+  margin: 12px 0 0; min-height: 1.5em; text-align: center;
+  font-size: clamp(17px, 1.9vw, 20px); line-height: 1.5;
+  font-style: italic; font-weight: 300; color: var(--ink-soft);
+}
 #slideshow-stage .ss-empty {
   position: absolute; inset: 0; display: grid; place-items: center;
   padding: 24px; text-align: center;
@@ -251,6 +282,20 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
   background-color: var(--paper); border: 1px solid var(--rule); border-radius: 3px; overflow: hidden;
 }
 .video-shell video { width: 100%; height: 100%; object-fit: contain; background-color: var(--paper); }
+/* Sound toggle over the corner of the catch video (script.js). */
+.sound {
+  position: absolute; top: 12px; right: 12px; z-index: 1;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px 8px 12px; border: 0; border-radius: 999px;
+  background: rgba(20,15,10,.55); color: #FFF8EC; cursor: pointer;
+  font: 600 12px var(--sans); letter-spacing: .08em;
+  transition: background 200ms;
+}
+.sound:hover { background: rgba(20,15,10,.75); }
+.sound .waves { display: none; }
+.sound[aria-pressed="true"] .waves { display: inline; }
+.sound[aria-pressed="true"] .cross { display: none; }
+.video-shell.is-empty .sound { display: none; }
 .video-missing {
   position: absolute; inset: 0; display: none;
   place-items: center; padding: 24px; text-align: center; background-color: var(--paper);
@@ -272,11 +317,17 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 
 #catch .caption { margin-inline: auto; text-align: center; }
 
-/* ---- gallery grid (filled by script.js from media/) ---- */
+/* ---- gallery grid (filled by script.js from media/) ----
+   .masonry: rows are 1px and script.js makes each tile span its own height
+   in rows, so photos keep their shape; the gap below a tile is its margin. */
 .photo-grid {
   display: grid; grid-template-columns: repeat(4, 1fr);
   gap: clamp(6px, 1.4vw, 14px);
 }
+.photo-grid.masonry { grid-auto-rows: 1px; row-gap: 0; align-items: start; }
+.photo-grid.masonry button { aspect-ratio: auto; height: auto; margin-bottom: clamp(6px, 1.4vw, 14px); }
+.photo-grid.masonry img, .photo-grid.masonry video { height: auto; }
+@media (max-width: 640px) { .photo-grid { grid-template-columns: repeat(2, 1fr); } }
 .photo-grid button {
   display: block; padding: 0; aspect-ratio: 1;
   border: 1px solid var(--rule); border-radius: 3px; overflow: hidden;
@@ -379,6 +430,14 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
   font-size: 22px; line-height: 1; cursor: pointer;
 }
 .lightbox-close:hover { background: rgba(0,0,0,.6); }
+.lightbox-caption {
+  position: fixed; left: 50%; bottom: 14px; z-index: 1001;
+  transform: translateX(-50%); max-width: min(90vw, 640px); margin: 0;
+  padding: 8px 16px; border-radius: 999px; background: rgba(0,0,0,.5);
+  color: var(--paper); text-align: center;
+  font-size: 17px; line-height: 1.45; font-style: italic; font-weight: 300;
+}
+.lightbox-caption[hidden] { display: none; }
 
 /* ---- scene clips ----
    The transition into a scene with data-clip (script.js): it plays on the
@@ -410,7 +469,7 @@ footer .eyebrow { margin-top: 14px; }
   /* Wider side padding keeps text clear of the docked .sidenav. */
   .wrap, .narrow, .mid { padding-left: 50px; padding-right: 50px; }
   /* Every scene after the intro has the sidebar docked on the left. */
-  .scenes .scene:not(#top) :is(.wrap, .narrow, .mid) { padding-left: 60px; padding-right: 20px; }
+  .scenes .scene:not(#top) :is(.wrap, .narrow, .mid) { padding-left: 60px; padding-right: 34px; }
   .frame img { aspect-ratio: 499 / 934; }
   .frame { width: min(100%, 260px); }
 }

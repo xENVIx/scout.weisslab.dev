@@ -2,10 +2,11 @@
 
    Slideshow: /media/ is read via nginx's directory listing
    (autoindex is on for that location in the nginx config). Every image
-   and video file found there is a candidate, ordered by filename. Two lists
-   in the same folder (one filename per line, kept by /media-admin) pick from
-   them: not_in_gallery.txt names files left out of the gallery grid (all
-   are in it otherwise), and slideshow.txt names the files in the slideshow.
+   and video file found there is a candidate. Lists in the same folder (kept
+   by /media-admin) decide the rest: not_in_gallery.txt names files left out
+   of the gallery grid (all are in it otherwise), slideshow.txt names the
+   files in the slideshow, order.txt sets their order (files it doesn't name
+   follow, by filename), and captions.txt holds "<file>=<caption>" lines.
 */
 
 /* Scenes: the page is four full-screen .scene layers (intro, dedication,
@@ -17,7 +18,10 @@
 
    A scene with data-clip="<gif or video>" (and data-clip-ms, how long to
    show it) uses that clip as the transition whenever you arrive at it, in
-   place of the usual cross-fade; input waits until it's done. */
+   place of the usual cross-fade; input waits until it's done.
+
+   .scene-dots, down the right edge, has one dot per scene: it shows where
+   you are and jumps to a scene when clicked. */
 (function scenes() {
   var list = Array.prototype.slice.call(document.querySelectorAll(".scene"));
   var sidenav = document.getElementById("sidenav");
@@ -38,6 +42,28 @@
   var clip = null, clipScene = null, clipTimers = [];
 
   document.documentElement.classList.add("scenes");
+
+  // Named after the matching nav link ("Top" for the intro).
+  var dotNav = document.createElement("nav");
+  dotNav.className = "scene-dots";
+  dotNav.setAttribute("aria-label", "Sections");
+  var dots = list.map(function (el, i) {
+    var anchor = el.getAttribute("data-anchor");
+    var link = anchor && document.querySelector('.sidenav a[href="#' + anchor + '"]');
+    var name = i === 0 ? "Top" : link ? link.textContent.trim() : anchor;
+    var b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("aria-label", name);
+    b.title = name;
+    b.addEventListener("click", function () {
+      if (i === current || busy()) return;
+      lockUntil = Date.now() + LOCK_MS;
+      activate(i, i > current ? 1 : -1, false);
+    });
+    dotNav.appendChild(b);
+    return b;
+  });
+  document.body.appendChild(dotNav);
 
   function atTop(el) { return el.scrollTop <= 1; }
   function atBottom(el) { return el.scrollTop + el.clientHeight >= el.scrollHeight - 2; }
@@ -110,6 +136,7 @@
     current = i;
     lastScrollAt = 0;
     if (sidenav) sidenav.classList.toggle("visible", i > 0);
+    dots.forEach(function (d, j) { d.setAttribute("aria-current", j === i ? "true" : "false"); });
 
     var anchor = to.getAttribute("data-anchor");
     try { history.replaceState(null, "", anchor ? "#" + anchor : location.pathname + location.search); } catch (e) {}
@@ -238,6 +265,7 @@
   var VIDEO_RE = /\.(mp4|webm|mov|m4v)$/i;
 
   var stage = document.getElementById("slideshow-stage");
+  var captionEl = document.getElementById("slideshow-caption");
   var grid = document.getElementById("photo-grid");
   var dotWrap = document.getElementById("slideshow-dots");
   var counter = document.getElementById("slideshow-count");
@@ -248,30 +276,43 @@
   var layers = [];
   var dots = [];
   var current = 0;
-  var timer = null;
   var paused = false;
+  var bar = document.createElement("i");
 
   var lightbox = document.getElementById("lightbox");
   var lightboxImg = document.getElementById("lightbox-img");
   var lightboxVideo = null; // made on first use, so photos never share the viewport with it
   var lightboxClose = document.getElementById("lightbox-close");
+  var lightboxCaption = document.getElementById("lightbox-caption");
 
   if (!stage) return;
 
-  // A missing list just means an empty one.
-  function fetchList(name) {
+  // A missing list just means an empty one: its non-blank lines, trimmed.
+  function fetchLines(name) {
     return fetch(DIR + name, { cache: "no-cache" })
       .then(function (r) { return r.ok ? r.text() : ""; }, function () { return ""; })
       .then(function (t) {
-        var set = {};
-        t.split("\n").forEach(function (l) { l = l.trim(); if (l) set[l] = true; });
-        return set;
+        return t.split("\n").map(function (l) { return l.trim(); }).filter(Boolean);
       });
   }
+  function toSet(lines) {
+    var set = {};
+    lines.forEach(function (l) { set[l] = true; });
+    return set;
+  }
 
-  var notInGallery = {}, inSlideshow = {};
-  Promise.all([fetchList("not_in_gallery.txt"), fetchList("slideshow.txt")])
-    .then(function (lists) { notInGallery = lists[0]; inSlideshow = lists[1]; return fetch(DIR, { cache: "no-cache" }); })
+  var notInGallery = {}, inSlideshow = {}, order = [], captions = {};
+  Promise.all([fetchLines("not_in_gallery.txt"), fetchLines("slideshow.txt"), fetchLines("order.txt"), fetchLines("captions.txt")])
+    .then(function (lists) {
+      notInGallery = toSet(lists[0]);
+      inSlideshow = toSet(lists[1]);
+      order = lists[2];
+      lists[3].forEach(function (l) {
+        var i = l.indexOf("=");
+        if (i > 0) captions[l.slice(0, i)] = l.slice(i + 1).trim();
+      });
+      return fetch(DIR, { cache: "no-cache" });
+    })
     .then(function (r) { return r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status)); })
     .then(function (html) {
       var doc = new DOMParser().parseFromString(html, "text/html");
@@ -286,7 +327,12 @@
         seen[f] = true;
         return true;
       });
-      files.sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }); });
+      files.sort(function (a, b) {
+        var i = order.indexOf(a), j = order.indexOf(b);
+        if (i < 0) i = Infinity;
+        if (j < 0) j = Infinity;
+        return i !== j ? i - j : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+      });
       buildGrid(files.filter(function (f) { return !notInGallery[f]; }));
       start(files.filter(function (f) { return inSlideshow[f]; }));
     })
@@ -298,7 +344,7 @@
 
   function start(files) {
     items = files.map(function (f) {
-      return { file: f, type: VIDEO_RE.test(f) ? "video" : "image" };
+      return { file: f, type: VIDEO_RE.test(f) ? "video" : "image", caption: captions[f] || "" };
     });
 
     if (!items.length) {
@@ -320,12 +366,15 @@
         el.addEventListener("ended", function () {
           if (i === current) next();
         });
+        el.addEventListener("timeupdate", function () {
+          if (i === current && el.duration) bar.style.width = (el.currentTime / el.duration * 100) + "%";
+        });
       } else {
         el = document.createElement("img");
         el.src = DIR + item.file;
-        el.alt = "Scout";
+        el.alt = item.caption || "Scout";
         el.loading = i === 0 ? "eager" : "lazy";
-        el.addEventListener("click", function () { openLightbox(el.src); });
+        el.addEventListener("click", function () { openLightbox(el.src, false, item.caption); });
       }
       stage.appendChild(el);
       layers.push(el);
@@ -339,8 +388,19 @@
       dots.push(b);
     });
 
-    stage.addEventListener("mouseenter", function () { paused = true; });
-    stage.addEventListener("mouseleave", function () { paused = false; });
+    // The progress bar along the bottom of the photo: a CSS animation as long
+    // as AUTOPLAY_MS whose end moves to the next slide, so pausing it (mouse
+    // over the photo, lightbox open) pauses the slideshow too. For a video
+    // it follows the playback position instead.
+    var progress = document.createElement("div");
+    progress.className = "ss-progress";
+    progress.setAttribute("aria-hidden", "true");
+    progress.appendChild(bar);
+    stage.appendChild(progress);
+    bar.addEventListener("animationend", function () { advance(1); tick(); });
+
+    stage.addEventListener("mouseenter", function () { paused = true; setPaused(); });
+    stage.addEventListener("mouseleave", function () { paused = false; setPaused(); });
 
     var touchX = null;
     stage.addEventListener("touchstart", function (e) { touchX = e.touches[0].clientX; }, { passive: true });
@@ -365,16 +425,33 @@
     tick();
   }
 
-  // The Gallery section: photos and videos from the same folder, as a grid
-  // of square thumbnails that open in the lightbox. A video tile shows its
-  // first frame (only its metadata loads until it's opened) and a play badge.
+  // The Gallery section: photos and videos from the same folder, as a
+  // masonry grid that keeps each one's shape, opening in the lightbox. A
+  // video tile shows its first frame (only its metadata loads until it's
+  // opened) and a play badge.
+  //
+  // The grid's rows are 1px tall (style.css), so a tile spanning N rows is N
+  // px tall: once a tile knows its picture's shape, it spans its width times
+  // that ratio, plus the gap below it. Until then it's square.
+  function sizeTile(b) {
+    var ratio = Number(b.getAttribute("data-ratio")) || 1;
+    var gap = parseFloat(getComputedStyle(b).marginBottom) || 0;
+    b.style.gridRowEnd = "span " + Math.max(1, Math.round(b.offsetWidth * ratio + gap));
+  }
+  function sizeTiles() {
+    if (grid) Array.prototype.forEach.call(grid.querySelectorAll("button"), sizeTile);
+  }
+  var resizeTimer = null;
+  window.addEventListener("resize", function () { clearTimeout(resizeTimer); resizeTimer = setTimeout(sizeTiles, 100); });
+
   function buildGrid(files) {
     if (!grid) return;
     files.forEach(function (file) {
       var isVideo = VIDEO_RE.test(file);
+      var caption = captions[file] || "";
       var b = document.createElement("button");
       b.type = "button";
-      b.setAttribute("aria-label", isVideo ? "Play video" : "Open photo");
+      b.setAttribute("aria-label", (isVideo ? "Play video" : "Open photo") + (caption ? ": " + caption : ""));
       var thumb;
       if (isVideo) {
         thumb = document.createElement("video");
@@ -382,6 +459,9 @@
         thumb.muted = true;
         thumb.playsInline = true;
         thumb.preload = "metadata";
+        thumb.addEventListener("loadedmetadata", function () {
+          if (thumb.videoWidth) { b.setAttribute("data-ratio", thumb.videoHeight / thumb.videoWidth); sizeTile(b); }
+        });
         var badge = document.createElement("span");
         badge.className = "play";
         badge.setAttribute("aria-hidden", "true");
@@ -389,14 +469,19 @@
       } else {
         thumb = document.createElement("img");
         thumb.src = DIR + file;
-        thumb.alt = "Scout";
+        thumb.alt = caption || "Scout";
         thumb.loading = "lazy";
+        thumb.addEventListener("load", function () {
+          if (thumb.naturalWidth) { b.setAttribute("data-ratio", thumb.naturalHeight / thumb.naturalWidth); sizeTile(b); }
+        });
       }
       b.insertBefore(thumb, b.firstChild);
-      b.addEventListener("click", function () { openLightbox(DIR + encodeURIComponent(file), isVideo); });
+      b.addEventListener("click", function () { openLightbox(DIR + encodeURIComponent(file), isVideo, caption); });
       grid.appendChild(b);
+      sizeTile(b);
     });
     if (!grid.children.length) grid.innerHTML = '<div class="ss-empty">Nothing in the gallery yet.</div>';
+    else grid.classList.add("masonry");
   }
 
   function show() {
@@ -410,18 +495,25 @@
     });
     dots.forEach(function (d, i) { d.setAttribute("aria-current", i === current ? "true" : "false"); });
     if (counter) counter.textContent = pad(current + 1) + " / " + pad(items.length);
+    if (captionEl) captionEl.textContent = items[current].caption;
   }
 
   function pad(n) { return n < 10 ? "0" + n : String(n); }
 
+  // Restart the progress bar for the current slide.
   function tick() {
-    clearTimeout(timer);
-    if (!AUTOPLAY_MS || items.length < 2) return;
-    if (items[current].type === "video") return; // its own "ended" event advances instead
-    timer = setTimeout(function () {
-      if (!paused) advance(1);
-      tick();
-    }, AUTOPLAY_MS);
+    bar.style.animation = "none";
+    bar.style.width = "0";
+    var on = AUTOPLAY_MS && items.length > 1;
+    bar.parentNode.hidden = !on;
+    if (!on || items[current].type === "video") return; // a video's "ended" event advances instead
+    void bar.offsetWidth;
+    bar.style.width = "";
+    bar.style.animation = "ss-fill " + AUTOPLAY_MS + "ms linear forwards";
+    setPaused();
+  }
+  function setPaused() {
+    bar.style.animationPlayState = paused || (lightbox && !lightbox.hidden) ? "paused" : "running";
   }
 
   function advance(d) {
@@ -456,8 +548,9 @@
   }
   // Videos open in the same lightbox, playing with sound and controls;
   // zoom and pan are for photos only (baseW stays 0 for a video).
-  function openLightbox(src, isVideo) {
+  function openLightbox(src, isVideo, caption) {
     if (!lightbox || !lightboxImg) return;
+    if (lightboxCaption) { lightboxCaption.textContent = caption || ""; lightboxCaption.hidden = !caption; }
     zoom = 1;
     baseW = 0;
     lightboxImg.style.width = "";
@@ -467,7 +560,7 @@
     lightboxImg.style.display = isVideo ? "none" : "";
     if (lightboxVideo) lightboxVideo.style.display = isVideo ? "" : "none";
     lightbox.hidden = false;
-    clearTimeout(timer);
+    setPaused();
     if (isVideo) {
       if (!lightboxVideo) {
         lightboxVideo = document.createElement("video");
@@ -495,11 +588,11 @@
       lightboxVideo.removeAttribute("src");
       lightboxVideo.load();
     }
-    tick();
+    setPaused();
   }
   if (lightbox) {
     lightbox.addEventListener("click", function (e) {
-      if (e.target !== lightboxImg && e.target !== lightboxVideo) closeLightbox();
+      if (e.target !== lightboxImg && e.target !== lightboxVideo && e.target !== lightboxCaption) closeLightbox();
     });
     lightbox.addEventListener("dblclick", function (e) {
       if (e.target !== lightboxImg) return;
@@ -564,6 +657,24 @@
   function empty() { shell.classList.add("is-empty"); v.removeAttribute("controls"); }
   v.addEventListener("error", empty);
   if (v.networkState === 3) empty();
+
+  // It plays muted (browsers only autoplay silent video); this button turns
+  // the sound on and off, and follows the player's own mute control too.
+  var sound = document.getElementById("catch-sound");
+  if (!sound) return;
+  function label() {
+    var on = !v.muted && v.volume > 0;
+    sound.setAttribute("aria-pressed", on ? "true" : "false");
+    sound.querySelector("span").textContent = on ? "Sound on" : "Tap for sound";
+  }
+  sound.addEventListener("click", function () {
+    v.muted = !v.muted;
+    if (!v.muted && !v.volume) v.volume = 1;
+    if (!v.muted && v.paused) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+    label();
+  });
+  v.addEventListener("volumechange", label);
+  label();
 })();
 
 /* The intro photo and the catch video are named in media/page_files.txt
