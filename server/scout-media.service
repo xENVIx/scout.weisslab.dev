@@ -11,6 +11,9 @@ Group=scout-media
 UMask=0022
 ProtectSystem=strict
 ReadWritePaths=/var/www/inlovingmemoryofscout.com/html/media
+# The admin password the owner sets at /admin/password (password.json).
+StateDirectory=scout-media
+StateDirectoryMode=0700
 ProtectHome=yes
 PrivateTmp=yes
 NoNewPrivileges=yes

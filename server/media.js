@@ -1,10 +1,13 @@
 /* Media manager for Scout: a tiny dependency-free backend.
 
-   It also runs the site's one admin sign-in: /admin/login takes
-   ADMIN_PASSWORD and sets the scout_admin cookie (Path=/), signed with
+   It also runs the site's one admin sign-in: /admin/login takes the admin
+   password and sets the scout_admin cookie (Path=/), signed with
    SESSION_SECRET, which server/messages.js shares and checks the same way,
    so one sign-in covers /admin (a page of links to everything),
-   /media-admin and /messages-admin.
+   /media-admin and /messages-admin. The password is ADMIN_PASSWORD from the
+   env file until the owner sets their own at /admin/password; that one is
+   kept (as a salted scrypt hash) in password.json in $STATE_DIRECTORY
+   (/var/lib/scout-media), outside the web root, and takes over.
 
    /media-admin
    lists everything in media/, the one folder the site's photos and videos
@@ -41,6 +44,8 @@ var crypto = require("crypto");
 var PORT = Number(process.env.PORT) || 3312;
 var HOST = "127.0.0.1";
 var ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+var PASSWORD_FILE = path.join(process.env.STATE_DIRECTORY || path.join(__dirname, "data"), "password.json");
+var MIN_PASSWORD = 8; // characters
 var IMPORT_TOKEN = process.env.IMPORT_TOKEN || "";
 var SESSION_SECRET = process.env.SESSION_SECRET || "";
 var MESSAGES_PORT = Number(process.env.MESSAGES_PORT) || 3311;
@@ -284,7 +289,7 @@ function sessionCookie() {
 }
 
 function isAdmin(req) {
-  if (!ADMIN_PASSWORD || !SESSION_SECRET) return false;
+  if (!SESSION_SECRET) return false;
   var m = /(?:^|;\s*)scout_admin=(\d+)\.([0-9a-f]{64})/.exec(req.headers.cookie || "");
   if (!m || Number(m[1]) < Date.now()) return false;
   return crypto.timingSafeEqual(Buffer.from(m[2], "hex"), Buffer.from(sign(m[1]), "hex"));
@@ -294,6 +299,75 @@ function nextPage(v) { return ADMIN_PAGES.indexOf(v) >= 0 ? v : "/admin"; }
 
 var failures = new Map(); // ip -> [timestamps of wrong passwords]
 
+// ---- the admin password ----
+
+// The owner's own password ({ salt, hash }, scrypt), or null while the env
+// file's ADMIN_PASSWORD is still the one.
+function storedPassword() {
+  try { return JSON.parse(fs.readFileSync(PASSWORD_FILE, "utf8")); }
+  catch (e) { if (e.code !== "ENOENT") console.error(e); return null; }
+}
+function checkPassword(pass) {
+  var stored = storedPassword();
+  if (stored && stored.salt && stored.hash) {
+    var hash = crypto.scryptSync(pass, Buffer.from(stored.salt, "hex"), 64);
+    return crypto.timingSafeEqual(hash, Buffer.from(stored.hash, "hex"));
+  }
+  return !!ADMIN_PASSWORD && crypto.timingSafeEqual(sha(pass), sha(ADMIN_PASSWORD));
+}
+function setPassword(pass) {
+  var salt = crypto.randomBytes(16);
+  var data = JSON.stringify({ salt: salt.toString("hex"), hash: crypto.scryptSync(pass, salt, 64).toString("hex"), changedAt: new Date().toISOString() });
+  fs.mkdirSync(path.dirname(PASSWORD_FILE), { recursive: true });
+  var tmp = PASSWORD_FILE + ".tmp";
+  fs.writeFileSync(tmp, data, { mode: 0o600 });
+  fs.renameSync(tmp, PASSWORD_FILE);
+}
+
+// Wrong current passwords count towards the same lock-out as signing in.
+function tooManyFailures(ip) {
+  var now = Date.now();
+  var list = (failures.get(ip) || []).filter(function (t) { return now - t < LOGIN_WINDOW_MS; });
+  failures.set(ip, list);
+  return list.length >= LOGIN_LIMIT;
+}
+
+function passwordPage(res, msg) {
+  var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>Scout admin – password</title><style>' +
+    'body{margin:0;padding:24px 20px;background:#FAF4EA;color:#2B211B;font:16px/1.6 Georgia,serif}' +
+    'main{max-width:400px;margin:6vh auto 0}h1{font-weight:400}label{display:block;font:600 13px system-ui,sans-serif;margin-bottom:6px}' +
+    'input{box-sizing:border-box;width:100%;font:16px system-ui,sans-serif;padding:10px 12px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;margin-bottom:14px}' +
+    'button{font:600 15px system-ui,sans-serif;padding:10px 20px;border-radius:999px;border:1px solid #A8571F;background:#A8571F;color:#FFF8EC;cursor:pointer}' +
+    '.err{color:#9b2c2c;font:14px system-ui,sans-serif}.hint{font:14px system-ui,sans-serif;color:#6B5748}.back{font:14px system-ui,sans-serif}' +
+    '</style></head><body><main><p class="back"><a href="/admin">← Admin</a></p><h1>Change password</h1>' +
+    (msg ? '<p class="err">' + esc(msg) + '</p>' : '') +
+    '<form method="post" action="/admin/password">' +
+    '<label for="cur">Current password</label><input id="cur" name="current" type="password" autocomplete="current-password" required>' +
+    '<label for="new">New password</label><input id="new" name="password" type="password" autocomplete="new-password" minlength="' + MIN_PASSWORD + '" required>' +
+    '<label for="again">New password again</label><input id="again" name="again" type="password" autocomplete="new-password" minlength="' + MIN_PASSWORD + '" required>' +
+    '<p class="hint">At least ' + MIN_PASSWORD + ' characters. It\'s the one password for every admin page.</p>' +
+    '<button>Change password</button></form></main></body></html>';
+  send(res, msg ? 400 : 200, html, { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" });
+}
+
+function changePassword(req, res) {
+  var ip = req.headers["x-real-ip"] || req.socket.remoteAddress || "";
+  readForm(req, function (f) {
+    if (tooManyFailures(ip)) return passwordPage(res, "Too many wrong passwords. Please wait 15 minutes and try again.");
+    if (!checkPassword(String(f.current || "").trim())) {
+      failures.get(ip).push(Date.now());
+      return passwordPage(res, "Your current password isn't right.");
+    }
+    var pass = String(f.password || "").trim();
+    if (pass.length < MIN_PASSWORD) return passwordPage(res, "The new password needs at least " + MIN_PASSWORD + " characters.");
+    if (pass.length > 200) return passwordPage(res, "That's a very long password (200 characters max).");
+    if (pass !== String(f.again || "").trim()) return passwordPage(res, "The two new passwords don't match.");
+    try { setPassword(pass); } catch (e) { console.error(e); return passwordPage(res, "Couldn't save the new password: " + e.code); }
+    send(res, 303, "", { Location: "/admin?msg=" + encodeURIComponent("Your password has been changed.") });
+  });
+}
+
 function login(req, res) {
   var ip = req.headers["x-real-ip"] || req.socket.remoteAddress || "";
   var now = Date.now();
@@ -301,7 +375,7 @@ function login(req, res) {
   readForm(req, function (f) {
     if (list.length >= LOGIN_LIMIT) return loginPage(res, "Too many tries. Please wait 15 minutes and try again.", f.next);
     var pass = String(f.password || "").trim();
-    if (ADMIN_PASSWORD && crypto.timingSafeEqual(sha(pass), sha(ADMIN_PASSWORD))) {
+    if (checkPassword(pass)) {
       failures.delete(ip);
       return send(res, 303, "", { Location: nextPage(f.next), "Set-Cookie": sessionCookie() });
     }
@@ -539,7 +613,7 @@ function messageCounts(cb) {
   req.end();
 }
 
-function hubPage(res) {
+function hubPage(res, msg) {
   messageCounts(function (counts) {
     var waiting = counts ? counts.pending : null;
     function card(href, title, text, badge) {
@@ -556,8 +630,10 @@ function hubPage(res) {
       '.sub{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}.sub .card{margin:0}' +
       '.out{float:right;margin-top:14px}.out button{font:600 13px system-ui,sans-serif;padding:6px 12px;border-radius:999px;border:1px solid #DBC8AE;background:#FAF4EA;cursor:pointer;color:#2B211B}' +
       '.site{font:14px system-ui,sans-serif}' +
+      '.msg{background:#FFF1D6;border:1px solid #E8C98F;border-radius:4px;padding:10px 14px;font:14px system-ui,sans-serif}' +
       '</style></head><body><main><form method="post" action="/admin/logout" class="out"><button>Sign out</button></form>' +
       '<h1>Scout admin</h1><p class="site"><a href="/">View the site →</a></p>' +
+      (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') +
       '<h2>Messages</h2>' +
       card("/messages-admin", "Messages", waiting === null ? "Approve, hide or delete what visitors leave, and copy their photos into your media."
         : waiting ? waiting + " waiting for approval. Approve, hide or delete them, and copy their photos into your media." : "Nothing waiting. Approve, hide or delete what visitors leave, and copy their photos into your media.", waiting || "") +
@@ -567,7 +643,10 @@ function hubPage(res) {
       card("/media-admin#title-photo", "Title page photo", "The big photo on the first page.") +
       card("/media-admin#slideshow", "Slideshow timing", "How long each photo shows.") +
       card("/media-admin#memorial", "Memorial text", "The words in the Memorial section.") +
-      '</div></main></body></html>';
+      '</div>' +
+      '<h2>You</h2>' +
+      card("/admin/password", "Change password", "Set your own password for signing in to these pages.") +
+      '</main></body></html>';
     send(res, 200, html, { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" });
   });
 }
@@ -938,7 +1017,7 @@ function adminClient() {
 http.createServer(function (req, res) {
   var u = new URL(req.url, "http://x");
   if (u.pathname === "/internal/import" && req.method === "POST") return importFromMessages(req, res, u.searchParams);
-  if (["/admin", "/admin/login", "/admin/logout", "/media-admin", "/media-admin/upload"].indexOf(u.pathname) < 0) return send(res, 404, "Not found");
+  if (["/admin", "/admin/login", "/admin/logout", "/admin/password", "/media-admin", "/media-admin/upload"].indexOf(u.pathname) < 0) return send(res, 404, "Not found");
   if (u.pathname === "/admin/login") {
     if (req.method === "POST") return sameOrigin(req) ? login(req, res) : send(res, 403, "Forbidden");
     return isAdmin(req) ? send(res, 303, "", { Location: nextPage(u.searchParams.get("next")) }) : loginPage(res, "", u.searchParams.get("next"));
@@ -950,10 +1029,12 @@ http.createServer(function (req, res) {
     if (req.method === "GET") return send(res, 303, "", { Location: "/admin/login?next=" + encodeURIComponent(u.pathname) });
     return json(res, 401, { error: "You've been signed out. Reload the page and sign in again." });
   }
-  if (req.method === "GET" && u.pathname === "/admin") return hubPage(res);
+  if (req.method === "GET" && u.pathname === "/admin") return hubPage(res, u.searchParams.get("msg"));
+  if (req.method === "GET" && u.pathname === "/admin/password") return passwordPage(res, "");
   if (req.method === "GET" && u.pathname === "/media-admin") return adminPage(req, res, u.searchParams);
   if (req.method !== "POST") return send(res, 405, "Method not allowed", { Allow: "GET, POST" });
   if (!sameOrigin(req)) return send(res, 403, "Forbidden");
+  if (u.pathname === "/admin/password") return changePassword(req, res);
   if (u.pathname === "/media-admin/upload") return upload(req, res, u.searchParams);
   action(req, res);
 }).listen(PORT, HOST, function () {
