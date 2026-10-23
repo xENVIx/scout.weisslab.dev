@@ -127,11 +127,12 @@ function gifLength(src) {
     return sc;
   }
   // Going to scene `to` from scene `from`: down, the boundary just above
-  // `to`; up, the one just below it.
+  // `to`; up, the one just below it. Returns how long until `to` starts
+  // fading in (0 with no clip).
   function playClip(to, from) {
     var i = list.indexOf(to), j = list.indexOf(from);
     var carrier = clipAt(i > j ? i : i + 1);
-    if (!carrier || reduceMotion) return;
+    if (!carrier || reduceMotion) return 0;
     var scene = to;
     var src = carrier.getAttribute("data-clip");
     if (!clip) {
@@ -163,6 +164,7 @@ function gifLength(src) {
     // Start fading out early enough to be gone by the end of the clip.
     clipTimers.push(setTimeout(function () { clip.classList.remove("show"); }, SCENE_OUT_MS + Math.max(0, ms - CLIP_FADE_OUT_MS)));
     clipTimers.push(setTimeout(stopClip, sceneIn + SCENE_IN_MS));
+    return sceneIn;
   }
 
   var clipBlobs = {}; // GIF clip path -> its Blob (or the pending fetch)
@@ -218,7 +220,8 @@ function gifLength(src) {
       setShift(from, dir >= 0 ? -SHIFT : SHIFT);
       from.classList.remove("is-active");
     }
-    if (!instant && from !== to) playClip(to, from);
+    var wait = !instant && from !== to ? playClip(to, from) : 0;
+    list.forEach(function (el) { el.classList.remove("is-shown"); });
     to.classList.add("is-active");
     if (instant) { void to.offsetWidth; to.style.transition = ""; }
 
@@ -233,8 +236,16 @@ function gifLength(src) {
     preloadClip(list[i]);     // the clip back up
     preloadClip(list[i + 1]); // the clip on down
 
-    // Moments plays its videos only while their scene is up.
+    // The slideshow and Moments pause as soon as their scene is left, and
+    // only start once it's .is-shown: right away, or after a transition
+    // clip has finished. Each change fires "scenechange".
     document.dispatchEvent(new CustomEvent("scenechange"));
+    function shown() {
+      to.classList.add("is-shown");
+      document.dispatchEvent(new CustomEvent("scenechange"));
+    }
+    if (wait) clipTimers.push(setTimeout(shown, wait));
+    else shown();
   }
 
   function go(dir) {
@@ -695,9 +706,22 @@ function windowDots(wrap, dots, current) {
     bar.style.animation = "ss-fill " + AUTOPLAY_MS + "ms linear forwards";
     setPaused();
   }
-  function setPaused() {
-    bar.style.animationPlayState = paused || (lightbox && !lightbox.hidden) ? "paused" : "running";
+  // Paused while the mouse is over the photo, the lightbox is open, or the
+  // slideshow isn't the section on screen (see scenes: .is-shown).
+  function sceneShown() {
+    var sc = stage.closest(".scene");
+    return !document.documentElement.classList.contains("scenes") || !sc || sc.classList.contains("is-shown");
   }
+  function setPaused() {
+    bar.style.animationPlayState = paused || !sceneShown() || (lightbox && !lightbox.hidden) ? "paused" : "running";
+  }
+  // Arriving at the slideshow starts the photo on top over, with its full time.
+  var wasShown = false;
+  document.addEventListener("scenechange", function () {
+    var now = sceneShown();
+    if (stack && now && !wasShown) tick(); else setPaused();
+    wasShown = now;
+  });
 
   function next() { stack.go(1); tick(); }
   function previous() { stack.go(-1); tick(); }
@@ -861,7 +885,7 @@ function windowDots(wrap, dots, current) {
   function topCard() { return stack ? all[stack.top()] : null; }
   function sceneUp() {
     var sc = list.closest(".scene");
-    return !document.documentElement.classList.contains("scenes") || !sc || sc.classList.contains("is-active");
+    return !document.documentElement.classList.contains("scenes") || !sc || sc.classList.contains("is-shown");
   }
   // Play the top card's video (or time its GIF) while it can be seen; pause
   // everything else.
