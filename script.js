@@ -7,6 +7,7 @@
    of the gallery grid (all are in it otherwise), slideshow.txt names the
    files in the slideshow, order.txt sets their order (files it doesn't name
    follow, by filename), and captions.txt holds "<file>=<caption>" lines.
+   settings.txt holds "slide_seconds=<n>", how long each photo shows.
 */
 
 /* Scenes: the page is four full-screen .scene layers (intro, dedication,
@@ -259,7 +260,7 @@
 
 (function slideshow() {
   var DIR = "media/";
-  var AUTOPLAY_MS = 6000; // 0 disables autoplay
+  var AUTOPLAY_MS = 5000; // default; media/settings.txt's slide_seconds overrides it
 
   var IMAGE_RE = /\.(jpe?g|png|gif|webp|avif)$/i;
   var VIDEO_RE = /\.(mp4|webm|mov|m4v)$/i;
@@ -302,7 +303,7 @@
   }
 
   var notInGallery = {}, inSlideshow = {}, order = [], captions = {};
-  Promise.all([fetchLines("not_in_gallery.txt"), fetchLines("slideshow.txt"), fetchLines("order.txt"), fetchLines("captions.txt")])
+  Promise.all([fetchLines("not_in_gallery.txt"), fetchLines("slideshow.txt"), fetchLines("order.txt"), fetchLines("captions.txt"), fetchLines("settings.txt")])
     .then(function (lists) {
       notInGallery = toSet(lists[0]);
       inSlideshow = toSet(lists[1]);
@@ -310,6 +311,10 @@
       lists[3].forEach(function (l) {
         var i = l.indexOf("=");
         if (i > 0) captions[l.slice(0, i)] = l.slice(i + 1).trim();
+      });
+      lists[4].forEach(function (l) {
+        var m = /^slide_seconds\s*=\s*(\d+(?:\.\d+)?)$/.exec(l);
+        if (m && +m[1] > 0) AUTOPLAY_MS = Math.round(+m[1] * 1000);
       });
       return fetch(DIR, { cache: "no-cache" });
     })

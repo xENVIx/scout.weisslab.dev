@@ -11,7 +11,8 @@
    section's text, edited in a box at the bottom of the page (paragraphs
    separated by blank lines). captions.txt holds each file's optional
    caption ("<file>=<caption>"), and order.txt the display order the owner
-   set by dragging (files it doesn't name follow, by filename).
+   set by dragging (files it doesn't name follow, by filename). settings.txt
+   holds "slide_seconds=<n>", how long each photo shows in the slideshow.
    page_files.txt names the files
    index.html uses directly ("intro=<file>", "catch=<file>"); renaming one
    here updates it, and script.js picks up the new name. nginx proxies /media-admin here;
@@ -50,8 +51,11 @@ var SLIDES_LIST = "slideshow.txt";
 var CAPTIONS_FILE = "captions.txt";
 var ORDER_LIST = "order.txt";
 var MAX_CAPTION = 200; // characters
+var SETTINGS_FILE = "settings.txt";
+var DEFAULT_SLIDE_SECONDS = 5; // script.js uses the same default
+var MAX_SLIDE_SECONDS = 120;
 // Kept in media/ for the page to read, but not media themselves.
-var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, PAGE_LIST, MEMORIAL_FILE, CAPTIONS_FILE, ORDER_LIST];
+var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, PAGE_LIST, MEMORIAL_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
 
 // ---- names and paths ----
 
@@ -122,6 +126,15 @@ function readCaptions() {
     if (i > 0) out[l.slice(0, i)] = l.slice(i + 1).trim();
   });
   return out;
+}
+
+function slideSeconds() {
+  var n = DEFAULT_SLIDE_SECONDS;
+  readList(SETTINGS_FILE).forEach(function (l) {
+    var m = /^slide_seconds\s*=\s*(\d+(?:\.\d+)?)$/.exec(l);
+    if (m && +m[1] > 0) n = +m[1];
+  });
+  return n;
 }
 
 function writeCaptions(caps) {
@@ -340,6 +353,18 @@ function action(req, res) {
       }
       return send(res, 303, "", { Location: "/media-admin?msg=" + encodeURIComponent(msg) + "#memorial" });
     }
+    if (f.action === "settings") {
+      var secs = Number(f.slide_seconds);
+      if (!(secs >= 1 && secs <= MAX_SLIDE_SECONDS)) msg = "Pick a number of seconds from 1 to " + MAX_SLIDE_SECONDS + ".";
+      else {
+        secs = Math.round(secs * 10) / 10;
+        try {
+          writeFile(SETTINGS_FILE, "slide_seconds=" + secs + "\n");
+          msg = "Each photo now shows for " + secs + " second" + (secs === 1 ? "" : "s") + ".";
+        } catch (e) { console.error(e); msg = "Couldn't save the setting: " + e.code; }
+      }
+      return send(res, 303, "", { Location: "/media-admin?msg=" + encodeURIComponent(msg) + "#slideshow" });
+    }
     // The checkboxes save in the background and get JSON back.
     if (f.action === "flags") {
       if (!exists) return json(res, 400, { error: "That file is gone." });
@@ -477,9 +502,10 @@ function adminPage(req, res, query) {
     '#sortable .file{flex-direction:row;flex-wrap:wrap}#sortable .thumb{flex:1 1 0;height:90px}#sortable .info{flex-basis:100%}.grip{align-self:auto;height:90px}}' +
     '.memorial textarea{box-sizing:border-box;width:100%;min-height:340px;font:17px/1.6 Georgia,serif;padding:12px 14px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;color:#2B211B;resize:vertical;margin-bottom:10px}' +
     '.jump{font:14px system-ui,sans-serif;margin:-4px 0 0}' +
+    '.settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:15px system-ui,sans-serif}.settings input{width:80px;margin-left:8px}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
     '</style></head><body><main><form method="post" action="/media-admin/logout" class="out"><button>Sign out</button></form><h1>Scout’s media</h1>' +
-    '<p class="jump"><a href="#memorial">Edit the memorial text ↓</a></p>' +
+    '<p class="jump"><a href="#slideshow">Slideshow timing ↓</a> · <a href="#memorial">Edit the memorial text ↓</a></p>' +
     (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') +
     '<h2>Upload</h2>' +
     '<label class="drop" id="drop">Drop photos or videos here, or click to choose' +
@@ -487,6 +513,11 @@ function adminPage(req, res, query) {
     note +
     '<div class="listhead"><h2>All media (' + files.length + ')</h2>' + toggle + '</div>' +
     (view === "order" && files.length > 1 ? '<p class="order-note" id="order-note" aria-live="polite"></p>' : '') + rows +
+    '<h2 id="slideshow">Slideshow</h2>' +
+    '<form method="post" class="settings"><input type="hidden" name="action" value="settings">' +
+    '<label>Seconds each photo shows <input type="number" name="slide_seconds" min="1" max="' + MAX_SLIDE_SECONDS + '" step="0.5" value="' + esc(slideSeconds()) + '" required></label> ' +
+    '<button class="primary">Save</button></form>' +
+    '<p class="hint">Videos in the slideshow always play to the end before it moves on.</p>' +
     '<h2 id="memorial">Memorial text</h2>' +
     '<p class="hint">This is the text in the Memorial section. Leave a blank line between paragraphs; the first paragraph gets the large first letter.</p>' +
     '<form method="post" class="memorial"><input type="hidden" name="action" value="memorial">' +
