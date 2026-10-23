@@ -38,6 +38,11 @@ function gifLength(src) {
     .then(function (buf) { return gifRunMs(new Uint8Array(buf)); }, function () { return 0; });
 }
 
+/* Transition clips download one at a time through this queue (scenes:
+   preloadClip), and a neighbouring section's media waits for it (whenNear),
+   so a clip that's needed next never shares the connection. */
+var clipQueue = Promise.resolve();
+
 /* Scenes: the page is full-screen .scene layers (intro, dedication,
    slideshow, moments, gallery, messages) and scrolling fades between them instead of moving
    the page. A scene taller than the screen scrolls normally inside itself
@@ -78,6 +83,8 @@ function gifLength(src) {
   var lastScrollAt = 0;
   var reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   var clip = null, clipScene = null, clipTimers = [];
+  var clipRun = 0;          // bumped by stopClip, so a clip still waiting for its file gives up
+  var CLIP_WAIT_MS = 15000; // longest the next scene waits for a GIF clip that's still downloading
 
   document.documentElement.classList.add("scenes");
 
@@ -113,10 +120,16 @@ function gifLength(src) {
   // fades in from it, plays, fades back out, and only then does the new
   // scene fade in (its fade-in is held back with an inline transition-delay).
   function stopClip() {
+    clipRun++;
     clipTimers.forEach(clearTimeout);
     clipTimers = [];
     if (clip) clip.classList.remove("show");
-    if (clipScene) { clipScene.style.transitionDelay = ""; clipScene = null; }
+    if (clipScene) {
+      clipScene.style.transitionDelay = "";
+      clipScene.style.opacity = "";
+      clipScene.style.visibility = "";
+      clipScene = null;
+    }
   }
 
   // The scene carrying the clip between scenes i - 1 and i is list[i].
@@ -127,64 +140,93 @@ function gifLength(src) {
     return sc;
   }
   // Going to scene `to` from scene `from`: down, the boundary just above
-  // `to`; up, the one just below it. Returns how long until `to` starts
-  // fading in (0 with no clip).
-  function playClip(to, from) {
+  // `to`; up, the one just below it. If there's a clip, plays it and calls
+  // shown() once `to` starts fading in, and returns true. A GIF that hasn't
+  // finished downloading yet (a first visit) holds `to` back, hidden, until
+  // it has, so the clip isn't skipped; if it's still not in after
+  // CLIP_WAIT_MS, `to` just fades in without it.
+  function playClip(to, from, shown) {
     var i = list.indexOf(to), j = list.indexOf(from);
     var carrier = clipAt(i > j ? i : i + 1);
-    if (!carrier || reduceMotion) return 0;
-    var scene = to;
+    if (!carrier || reduceMotion) return false;
     var src = carrier.getAttribute("data-clip");
+    var isVideo = /\.(mp4|webm|mov|m4v)$/i.test(src);
     if (!clip) {
       clip = document.createElement("div");
       clip.className = "scene-clip";
       clip.setAttribute("aria-hidden", "true");
       document.body.appendChild(clip);
     }
-    var ms = Number(carrier.getAttribute("data-clip-ms")) || 2000;
-    var sceneIn = SCENE_OUT_MS + ms; // when the new scene starts fading in
-    clipScene = scene;
-    scene.style.transitionDelay = sceneIn + "ms, " + sceneIn + "ms, 0s";
-    lockUntil = Math.max(lockUntil, Date.now() + sceneIn + SCENE_IN_MS);
+    clipScene = to;
+    var run = clipRun, t0 = Date.now();
+    if (isVideo || clipBlobs[src]) { start(); return true; }
+    to.style.opacity = "0";
+    to.style.visibility = "hidden";
+    lockUntil = Math.max(lockUntil, Date.now() + CLIP_WAIT_MS + SCENE_IN_MS);
+    var giveUp = new Promise(function (r) { clipTimers.push(setTimeout(r, CLIP_WAIT_MS)); });
+    Promise.race([preloadClip(carrier), giveUp]).then(function () {
+      if (run !== clipRun) return;
+      if (clipBlobs[src]) return start();
+      to.style.opacity = "";
+      to.style.visibility = "";
+      lockUntil = Date.now() + SCENE_IN_MS;
+      stopClip();
+      shown();
+    });
+    return true;
 
-    clipTimers.push(setTimeout(function () {
-      // A fresh element each time so the clip starts from its first frame.
-      var isVideo = /\.(mp4|webm|mov|m4v)$/i.test(src);
-      var media = document.createElement(isVideo ? "video" : "img");
-      if (isVideo) { media.muted = true; media.playsInline = true; media.autoplay = true; }
-      else media.alt = "";
-      if (clipUrl) URL.revokeObjectURL(clipUrl);
-      clipUrl = clipBlobs[src] instanceof Blob ? URL.createObjectURL(clipBlobs[src]) : null;
-      media.src = clipUrl || (isVideo ? src : src + (src.indexOf("?") < 0 ? "?" : "&") + "t=" + Date.now());
-      clip.textContent = "";
-      clip.appendChild(media);
-      void clip.offsetWidth;
-      clip.classList.add("show");
-    }, SCENE_OUT_MS));
-    // Start fading out early enough to be gone by the end of the clip.
-    clipTimers.push(setTimeout(function () { clip.classList.remove("show"); }, SCENE_OUT_MS + Math.max(0, ms - CLIP_FADE_OUT_MS)));
-    clipTimers.push(setTimeout(stopClip, sceneIn + SCENE_IN_MS));
-    return sceneIn;
+    function start() {
+      var ms = Number(carrier.getAttribute("data-clip-ms")) || 2000;
+      var out = Math.max(0, SCENE_OUT_MS - (Date.now() - t0)); // what's left of the old scene's fade-out
+      var sceneIn = out + ms; // when the new scene starts fading in
+      to.style.transitionDelay = sceneIn + "ms, " + sceneIn + "ms, 0s";
+      to.style.opacity = "";
+      to.style.visibility = "";
+      lockUntil = Date.now() + sceneIn + SCENE_IN_MS;
+
+      clipTimers.push(setTimeout(function () {
+        // A fresh element each time so the clip starts from its first frame.
+        var media = document.createElement(isVideo ? "video" : "img");
+        if (isVideo) { media.muted = true; media.playsInline = true; media.autoplay = true; }
+        else media.alt = "";
+        if (clipUrl) URL.revokeObjectURL(clipUrl);
+        clipUrl = clipBlobs[src] ? URL.createObjectURL(clipBlobs[src]) : null;
+        media.src = clipUrl || (isVideo ? src : src + (src.indexOf("?") < 0 ? "?" : "&") + "t=" + Date.now());
+        clip.textContent = "";
+        clip.appendChild(media);
+        void clip.offsetWidth;
+        clip.classList.add("show");
+      }, out));
+      // Start fading out early enough to be gone by the end of the clip.
+      clipTimers.push(setTimeout(function () { clip.classList.remove("show"); }, out + Math.max(0, ms - CLIP_FADE_OUT_MS)));
+      clipTimers.push(setTimeout(shown, sceneIn));
+      clipTimers.push(setTimeout(stopClip, sceneIn + SCENE_IN_MS));
+    }
   }
 
-  var clipBlobs = {}; // GIF clip path -> its Blob (or the pending fetch)
+  var clipBlobs = {}; // GIF clip path -> its Blob, once downloaded and timed
+  var clipLoads = {}; // GIF clip path -> the download, a promise
   var clipUrl = null; // the blob: URL on screen, revoked when it's done
-  // Fetch a scene's GIF clip ahead of time, and time it from its frames
-  // unless the scene sets data-clip-ms itself.
+  // Fetch a scene's GIF clip ahead of time (first in line: the other
+  // sections' media wait until they're near, see whenNear), and time it from
+  // its frames unless the scene sets data-clip-ms itself. The promise
+  // resolves once it's ready, or failed. Clips download one after another,
+  // in the order they're asked for (the next one in, then the one after).
   function preloadClip(scene) {
     var src = scene && scene.getAttribute("data-clip");
-    if (!src || reduceMotion || /\.(mp4|webm|mov|m4v)$/i.test(src) || clipBlobs[src]) return;
-    clipBlobs[src] = "loading";
-    fetch(src).then(function (r) { return r.ok ? r.blob() : null; }).then(function (b) {
-      if (!b) { delete clipBlobs[src]; return; }
-      clipBlobs[src] = b;
-      if (!scene.hasAttribute("data-clip-ms")) {
-        new Response(b).arrayBuffer().then(function (buf) {
+    if (!src || reduceMotion || /\.(mp4|webm|mov|m4v)$/i.test(src)) return Promise.resolve();
+    if (clipLoads[src]) return clipLoads[src];
+    return (clipLoads[src] = clipQueue = clipQueue
+      .then(function () { return fetch(src, { priority: "high" }); })
+      .then(function (r) { return r.ok ? r.blob() : Promise.reject(); })
+      .then(function (b) {
+        return new Response(b).arrayBuffer().then(function (buf) {
           var ms = gifRunMs(new Uint8Array(buf));
-          if (ms && scene.getAttribute("data-clip") === src) scene.setAttribute("data-clip-ms", ms);
+          if (ms && !scene.hasAttribute("data-clip-ms") && scene.getAttribute("data-clip") === src) scene.setAttribute("data-clip-ms", ms);
+          clipBlobs[src] = b;
         });
-      }
-    }, function () { delete clipBlobs[src]; });
+      })
+      .catch(function () { delete clipLoads[src]; }));
   }
 
   // The GIF transitions chosen at /media-admin.
@@ -220,7 +262,7 @@ function gifLength(src) {
       setShift(from, dir >= 0 ? -SHIFT : SHIFT);
       from.classList.remove("is-active");
     }
-    var wait = !instant && from !== to ? playClip(to, from) : 0;
+    var held = !instant && from !== to && playClip(to, from, shown);
     list.forEach(function (el) { el.classList.remove("is-shown"); });
     to.classList.add("is-active");
     if (instant) { void to.offsetWidth; to.style.transition = ""; }
@@ -244,8 +286,7 @@ function gifLength(src) {
       to.classList.add("is-shown");
       document.dispatchEvent(new CustomEvent("scenechange"));
     }
-    if (wait) clipTimers.push(setTimeout(shown, wait));
-    else shown();
+    if (!held) shown();
   }
 
   function go(dir) {
@@ -278,14 +319,6 @@ function gifLength(src) {
   list.forEach(function (el) { el.style.transition = "none"; });
   activate(start, 1, true);
   list.forEach(function (el) { void el.offsetWidth; el.style.transition = ""; });
-
-  // Fetch the clips once the page has loaded, so they're ready the first time.
-  window.addEventListener("load", function () {
-    list.forEach(function (el) {
-      var src = el.getAttribute("data-clip");
-      if (src && !reduceMotion && !/\.(mp4|webm|mov|m4v)$/i.test(src)) new Image().src = src;
-    });
-  });
 
   window.addEventListener("wheel", function (e) {
     if (busy()) return;
@@ -436,6 +469,35 @@ function cardStack(els, onTop) {
   return { go: go, goTo: goTo, top: function () { return order[0]; } };
 }
 
+/* A section's photos and videos only start downloading once you're on it or
+   on a section next to it (the scenes are all laid out at once, so lazy
+   loading alone would fetch everything up front). That leaves the
+   connection to the hero and the first transition clip on a first visit.
+   whenNear(el, fn) runs fn once, then; right away without scenes, and for a
+   neighbouring section only after any transition clip download (clipQueue).
+   whenNear(el, fn, 0) waits until you're on el's section itself. */
+function whenNear(el, fn, within) {
+  var sc = el.closest(".scene");
+  if (within === undefined) within = 1;
+  function near() {
+    if (!sc || !document.documentElement.classList.contains("scenes")) return true;
+    var all = Array.prototype.slice.call(document.querySelectorAll(".scene"));
+    var active = document.querySelector(".scene.is-active");
+    return !active || Math.abs(all.indexOf(active) - all.indexOf(sc)) <= within;
+  }
+  function run() {
+    var active = document.querySelector(".scene.is-active");
+    if (!sc || active === sc || !document.documentElement.classList.contains("scenes")) fn();
+    else clipQueue.then(fn);
+  }
+  if (near()) return run();
+  document.addEventListener("scenechange", function check() {
+    if (!near()) return;
+    document.removeEventListener("scenechange", check);
+    run();
+  });
+}
+
 /* Dot rows (slideshow, Moments): with more than DOT_WINDOW dots, only a
    window of them around the current one shows, sliding along as it moves;
    the dots at an end with more beyond it shrink to hint at them. */
@@ -569,7 +631,8 @@ function windowDots(wrap, dots, current) {
       var card = document.createElement("div");
       card.className = "stack-card ss-card";
       var el = document.createElement("img");
-      el.src = DIR + item.file;
+      // The top few as you come near; the rest once you're on the slideshow.
+      whenNear(stage, function () { el.src = DIR + item.file; }, i < STACK_DEPTH ? 1 : 0);
       el.alt = item.caption || "Scout";
       el.loading = i < STACK_DEPTH ? "eager" : "lazy";
       el.addEventListener("click", function () { openLightbox(el.src, false, item.caption); });
@@ -654,7 +717,7 @@ function windowDots(wrap, dots, current) {
       var thumb;
       if (isVideo) {
         thumb = document.createElement("video");
-        thumb.src = DIR + encodeURIComponent(file) + "#t=0.1";
+        whenNear(grid, function () { thumb.src = DIR + encodeURIComponent(file) + "#t=0.1"; });
         thumb.muted = true;
         thumb.playsInline = true;
         thumb.preload = "metadata";
@@ -667,7 +730,7 @@ function windowDots(wrap, dots, current) {
         b.appendChild(badge);
       } else {
         thumb = document.createElement("img");
-        thumb.src = DIR + file;
+        whenNear(grid, function () { thumb.src = DIR + file; });
         thumb.alt = caption || "Scout";
         thumb.loading = "lazy";
         thumb.addEventListener("load", function () {
@@ -955,14 +1018,18 @@ function windowDots(wrap, dots, current) {
       var img = document.createElement("img");
       img.alt = caption || "Scout";
       img.addEventListener("error", function () { shell.classList.add("is-empty"); if (topCard() === card) update(); });
-      img.src = src;
-      gifLength(src).then(function (ms) { if (ms) card.ms = ms * GIF_PLAYS; });
+      whenNear(list, function () {
+        img.src = src;
+        gifLength(src).then(function (ms) { if (ms) card.ms = ms * GIF_PLAYS; });
+      });
       shell.replaceChild(img, v);
       var sound = shell.querySelector(".sound");
       if (sound) shell.removeChild(sound);
     } else {
       v.removeAttribute("controls");
-      v.src = src;
+      // (index.html's video has preload="none", so the page never fetches it
+      // unless nothing is ticked; the cards show their first frame.)
+      whenNear(list, function () { v.preload = "metadata"; v.src = src; });
       card.video = v;
       wireVideo(shell, v);
       v.addEventListener("error", function () { if (topCard() === card) update(); });
@@ -1145,7 +1212,7 @@ function windowDots(wrap, dots, current) {
           a.href = m.photo;
           a.target = "_blank";
           var img = document.createElement("img");
-          img.src = m.photo;
+          whenNear(list, function () { img.src = m.photo; });
           img.alt = "A photo of Scout, shared by a visitor";
           img.loading = "lazy";
           a.appendChild(img);
