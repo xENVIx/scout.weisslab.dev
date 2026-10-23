@@ -7,7 +7,8 @@
    request body. Each file also has two checkboxes, kept as plain lists the
    page reads (one filename per line): not_in_gallery.txt names images left
    out of the gallery (every image is in it unless listed), slideshow.txt names files in
-   the slideshow (nothing is unless listed). memorial.txt is the Memorial
+   the slideshow (nothing is unless listed). GIFs and videos get a third,
+   moments.txt, the ones shown in the Moments section. memorial.txt is the Memorial
    section's text, edited in a box at the bottom of the page (paragraphs
    separated by blank lines). captions.txt holds each file's optional
    caption ("<file>=<caption>"), and order.txt the display order the owner
@@ -45,9 +46,11 @@ var KINDS = [["image", "Images"], ["gif", "GIFs"], ["video", "Videos"], ["other"
 // leaves a gap on the page.
 var PAGE_LIST = "page_files.txt";
 var MEMORIAL_FILE = "memorial.txt";
-var ROLES = { intro: "the intro photo", "catch": "the catch video" };
+var ROLES = { intro: "the intro photo", "catch": "the Moments video when none are ticked" };
 var GALLERY_OUT_LIST = "not_in_gallery.txt";
 var SLIDES_LIST = "slideshow.txt";
+var MOMENTS_LIST = "moments.txt";
+var MOMENT_EXT = /\.(gif|mp4|webm|mov|m4v)$/i;
 var CAPTIONS_FILE = "captions.txt";
 var ORDER_LIST = "order.txt";
 var MAX_CAPTION = 200; // characters
@@ -55,7 +58,7 @@ var SETTINGS_FILE = "settings.txt";
 var DEFAULT_SLIDE_SECONDS = 5; // script.js uses the same default
 var MAX_SLIDE_SECONDS = 120;
 // Kept in media/ for the page to read, but not media themselves.
-var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, PAGE_LIST, MEMORIAL_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
+var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, MOMENTS_LIST, PAGE_LIST, MEMORIAL_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
 
 // ---- names and paths ----
 
@@ -175,7 +178,7 @@ function renamePageFile(file, to) {
 // After a delete (or rename), drop the old name from the lists, captions and
 // order (or carry its ticks, caption and place over to the new name).
 function forgetFile(file, renamedTo) {
-  [GALLERY_OUT_LIST, SLIDES_LIST].forEach(function (name) {
+  [GALLERY_OUT_LIST, SLIDES_LIST, MOMENTS_LIST].forEach(function (name) {
     var list = readList(name);
     if (list.indexOf(file) < 0) return;
     setFlag(name, file, false);
@@ -371,6 +374,7 @@ function action(req, res) {
       try {
         setFlag(GALLERY_OUT_LIST, f.file, f.gallery !== "1");
         setFlag(SLIDES_LIST, f.file, f.slideshow === "1");
+        if (MOMENT_EXT.test(f.file)) setFlag(MOMENTS_LIST, f.file, f.moments === "1");
       } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
       return json(res, 200, { ok: true });
     }
@@ -427,6 +431,7 @@ function adminPage(req, res, query) {
   var msg = query.get("msg");
   var galleryOut = readList(GALLERY_OUT_LIST);
   var slidesList = readList(SLIDES_LIST);
+  var momentsList = readList(MOMENTS_LIST);
   var captions = readCaptions();
   var memorial = "";
   try { memorial = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8").trim(); } catch (e) { if (e.code !== "ENOENT") throw e; }
@@ -443,7 +448,7 @@ function adminPage(req, res, query) {
       '<a class="thumb" href="' + esc(url) + '" target="_blank">' + thumb + '</a>' +
       '<div class="info"><div class="name">' + esc(f.name) + '</div><div class="meta">' + fmtSize(f.size) +
       ' · <span class="where"></span>' + (inUse ? ' · <b>' + esc(inUse) + '</b>' : '') + '</div>' +
-      flagBoxes(f.name, galleryOut.indexOf(f.name) < 0, slidesList.indexOf(f.name) >= 0) +
+      flagBoxes(f.name, galleryOut.indexOf(f.name) < 0, slidesList.indexOf(f.name) >= 0, momentsList.indexOf(f.name) >= 0) +
       '<div class="row"><input class="caption" value="' + esc(captions[f.name] || "") + '" maxlength="' + MAX_CAPTION + '" placeholder="Caption (optional)" aria-label="Caption for ' + esc(f.name) + '"></div>' +
       '<form method="post" class="row">' + hidden + '<input type="hidden" name="action" value="rename">' +
       '<input name="to" value="' + esc(f.name) + '" aria-label="New name"><button>Rename</button></form>' +
@@ -465,7 +470,7 @@ function adminPage(req, res, query) {
   };
   var toggle = files.length ? '<div class="view">' + viewLink("type", "By type") + viewLink("order", "Display order") + '</div>' : '';
 
-  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> puts it in the slideshow. New uploads are in the gallery but not the slideshow, and go at the end. ' +
+  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> puts it in the slideshow; <b>Moments</b> (GIFs and videos) puts it in the Moments section, one under another. New uploads are in the gallery but not the slideshow, and go at the end. ' +
     'To change the order, switch to <b>Display order</b> and drag a file by its ⠿ handle. A caption shows under the photo in the slideshow and the enlarged view.</p>';
 
   var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -529,10 +534,11 @@ function adminPage(req, res, query) {
   send(res, 200, html, headers);
 }
 
-function flagBoxes(file, gallery, slides) {
+function flagBoxes(file, gallery, slides, moments) {
   return '<div class="flags" data-file="' + esc(file) + '">' +
     '<label><input type="checkbox" class="flag-gallery"' + (gallery ? ' checked' : '') + '> Gallery</label>' +
     '<label><input type="checkbox" class="flag-slides"' + (slides ? ' checked' : '') + '> Slideshow</label>' +
+    (MOMENT_EXT.test(file) ? '<label><input type="checkbox" class="flag-moments"' + (moments ? ' checked' : '') + '> Moments</label>' : '') +
     '<span class="saved" aria-live="polite"></span></div>';
 }
 
@@ -551,30 +557,32 @@ function adminClient() {
   }
 
   // Label each file with where it shows up, the way script.js picks:
-  // gallery and slideshow = their ticked files, both in display order.
+  // gallery, slideshow and moments = their ticked files, all in display order.
   function renumber() {
     var rows = Array.prototype.slice.call(document.querySelectorAll(".file[data-order]"));
     rows.sort(function (a, b) { return a.getAttribute("data-order") - b.getAttribute("data-order"); });
-    var slide = 0, galleryN = 0;
+    var slide = 0, galleryN = 0, momentN = 0;
     rows.forEach(function (r) {
-      var where = r.querySelector(".where"), gallery = r.querySelector(".flag-gallery"), slides = r.querySelector(".flag-slides");
+      var where = r.querySelector(".where"), gallery = r.querySelector(".flag-gallery"), slides = r.querySelector(".flag-slides"), moments = r.querySelector(".flag-moments");
       if (!where || !slides) return;
       var parts = [];
       if (slides.checked) parts.push("Slide " + (++slide));
       if (gallery && gallery.checked) parts.push("Gallery " + (++galleryN));
+      if (moments && moments.checked) parts.push("Moment " + (++momentN));
       where.textContent = parts.length ? parts.join(" · ") : "Not on the page";
       where.className = parts.length ? "where" : "where off";
     });
   }
   renumber();
   document.querySelectorAll(".flags").forEach(function (box) {
-    var gallery = box.querySelector(".flag-gallery"), slides = box.querySelector(".flag-slides"), note = box.querySelector(".saved");
+    var gallery = box.querySelector(".flag-gallery"), slides = box.querySelector(".flag-slides"), moments = box.querySelector(".flag-moments"), note = box.querySelector(".saved");
     function save() {
       renumber();
-      report(note, post({ action: "flags", file: box.getAttribute("data-file"), gallery: gallery && gallery.checked ? "1" : "", slideshow: slides.checked ? "1" : "" }));
+      report(note, post({ action: "flags", file: box.getAttribute("data-file"), gallery: gallery && gallery.checked ? "1" : "", slideshow: slides.checked ? "1" : "", moments: moments && moments.checked ? "1" : "" }));
     }
     if (gallery) gallery.addEventListener("change", save);
     slides.addEventListener("change", save);
+    if (moments) moments.addEventListener("change", save);
   });
   // Captions save when you leave the box (or press Enter).
   document.querySelectorAll("input.caption").forEach(function (input) {

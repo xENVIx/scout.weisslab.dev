@@ -11,7 +11,7 @@
 */
 
 /* Scenes: the page is four full-screen .scene layers (intro, dedication,
-   slideshow, the catch) and scrolling fades between them instead of moving
+   slideshow, moments) and scrolling fades between them instead of moving
    the page. A scene taller than the screen scrolls normally inside itself
    and only fades once you're at its top or bottom edge. Wheel, touch swipe,
    keyboard and the nav links all go through go(). .sidenav slides in on
@@ -27,7 +27,6 @@
   var list = Array.prototype.slice.call(document.querySelectorAll(".scene"));
   var sidenav = document.getElementById("sidenav");
   var lightbox = document.getElementById("lightbox");
-  var frisbee = document.getElementById("frisbee");
   if (list.length < 2) return;
 
   var SHIFT = 24;          // px of vertical drift during the fade
@@ -142,9 +141,8 @@
     var anchor = to.getAttribute("data-anchor");
     try { history.replaceState(null, "", anchor ? "#" + anchor : location.pathname + location.search); } catch (e) {}
 
-    // The catch clip only plays (and only downloads) while its scene is up.
-    if (frisbee && !frisbee.closest(".scene").classList.contains("is-active")) frisbee.pause();
-    else if (frisbee) { var p = frisbee.play(); if (p && p.catch) p.catch(function () {}); }
+    // Moments plays its videos only while their scene is up.
+    document.dispatchEvent(new CustomEvent("scenechange"));
   }
 
   function go(dir) {
@@ -653,43 +651,145 @@
   });
 })();
 
-/* Dedicated "the catch" clip: hide the player behind a plate until the
-   file actually exists at media/scout_good_catch.mp4. */
-(function frisbeeVideo() {
-  var v = document.getElementById("frisbee");
-  var shell = document.getElementById("video-shell");
-  if (!v || !shell) return;
-  function empty() { shell.classList.add("is-empty"); v.removeAttribute("controls"); }
-  function loaded() { shell.classList.remove("is-empty"); v.setAttribute("controls", ""); }
-  v.addEventListener("error", empty);
-  // Only a real error counts: networkState reads NO_SOURCE for a moment
-  // before the browser starts loading, which used to hide a working video.
-  if (v.error) empty();
-  v.addEventListener("loadeddata", loaded);
+/* Moments: every GIF and video ticked "Moments" at /media-admin (listed in
+   media/moments.txt), one under another in display order (order.txt), each
+   with its caption from captions.txt if it has one (in place of the
+   section's own caption). Each video loops, muted,
+   with its own sound button, and plays only while it's on screen and its
+   scene is up. With nothing ticked, the video in index.html stays as it is.
+   One that fails to load gets .is-empty, which shows a placeholder. */
+(function moments() {
+  var DIR = "media/";
+  var MOMENT_RE = /\.(gif|mp4|webm|mov|m4v)$/i;
+  var list = document.getElementById("moments-list");
+  var first = document.getElementById("video-shell");
+  if (!list || !first) return;
+  var template = first.cloneNode(true);
+  var videos = [];
 
-  // It plays muted (browsers only autoplay silent video); this button turns
-  // the sound on and off, and follows the player's own mute control too.
-  var sound = document.getElementById("catch-sound");
-  if (!sound) return;
-  function label() {
-    var on = !v.muted && v.volume > 0;
-    sound.setAttribute("aria-pressed", on ? "true" : "false");
-    sound.querySelector("span").textContent = on ? "Sound on" : "Tap for sound";
+  function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+  function sceneUp() {
+    var sc = list.closest(".scene");
+    return !document.documentElement.classList.contains("scenes") || !sc || sc.classList.contains("is-active");
   }
-  sound.addEventListener("click", function () {
-    v.muted = !v.muted;
-    if (!v.muted && !v.volume) v.volume = 1;
-    if (!v.muted && v.paused) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+  function update() {
+    var up = sceneUp();
+    videos.forEach(function (v) { if (up && v._inView) play(v); else v.pause(); });
+  }
+  var seen = "IntersectionObserver" in window ? new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { e.target._inView = e.isIntersecting; });
+    update();
+  }, { threshold: 0.25 }) : null;
+  document.addEventListener("scenechange", update);
+
+  function wireVideo(shell, v) {
+    function empty() { shell.classList.add("is-empty"); v.removeAttribute("controls"); }
+    v.addEventListener("error", empty);
+    // Only a real error counts: networkState reads NO_SOURCE for a moment
+    // before the browser starts loading, which used to hide a working video.
+    if (v.error) empty();
+    v.addEventListener("loadeddata", function () { shell.classList.remove("is-empty"); v.setAttribute("controls", ""); });
+    videos.push(v);
+    if (seen) seen.observe(v); else v._inView = true;
+
+    // It plays muted (browsers only autoplay silent video); this button turns
+    // the sound on and off, and follows the player's own mute control too.
+    var sound = shell.querySelector(".sound");
+    if (!sound) return;
+    function label() {
+      var on = !v.muted && v.volume > 0;
+      sound.setAttribute("aria-pressed", on ? "true" : "false");
+      sound.querySelector("span").textContent = on ? "Sound on" : "Tap for sound";
+    }
+    sound.addEventListener("click", function () {
+      v.muted = !v.muted;
+      if (!v.muted && !v.volume) v.volume = 1;
+      if (!v.muted && v.paused) play(v);
+      label();
+    });
+    v.addEventListener("volumechange", label);
     label();
-  });
-  v.addEventListener("volumechange", label);
-  label();
+  }
+  wireVideo(first, first.querySelector("video"));
+  update();
+
+  // One moment: a copy of the shell in index.html, with an <img> in place of
+  // the player for a GIF, and its caption underneath.
+  function build(name, caption) {
+    var wrap = document.createElement("div");
+    wrap.className = "moment";
+    var shell = template.cloneNode(true);
+    shell.removeAttribute("id");
+    Array.prototype.forEach.call(shell.querySelectorAll("[id]"), function (el) { el.removeAttribute("id"); });
+    var v = shell.querySelector("video");
+    var src = DIR + encodeURIComponent(name);
+    wrap.appendChild(shell);
+    if (/\.gif$/i.test(name)) {
+      var img = document.createElement("img");
+      img.alt = caption || "Scout";
+      img.loading = "lazy";
+      img.addEventListener("error", function () { shell.classList.add("is-empty"); });
+      img.src = src;
+      shell.replaceChild(img, v);
+      var sound = shell.querySelector(".sound");
+      if (sound) shell.removeChild(sound);
+    } else {
+      v.src = src;
+      wireVideo(shell, v);
+    }
+    if (caption) {
+      var p = document.createElement("p");
+      p.className = "caption";
+      p.textContent = caption;
+      wrap.appendChild(p);
+    }
+    return wrap;
+  }
+
+  function fetchLines(name) {
+    return fetch(DIR + name, { cache: "no-cache" })
+      .then(function (r) { return r.ok ? r.text() : ""; }, function () { return ""; })
+      .then(function (t) { return t.split("\n").map(function (l) { return l.trim(); }).filter(Boolean); });
+  }
+  Promise.all([fetchLines("moments.txt"), fetchLines("order.txt"), fetchLines("captions.txt"),
+    fetch(DIR, { cache: "no-cache" }).then(function (r) { return r.ok ? r.text() : ""; }, function () { return ""; })])
+    .then(function (r) {
+      // Only files that are really there (the listing) and are GIFs or videos.
+      var present = {}, dup = {}, captions = {};
+      Array.prototype.forEach.call(new DOMParser().parseFromString(r[3], "text/html").querySelectorAll("a"), function (a) {
+        var f = a.getAttribute("href");
+        if (f) present[decodeURIComponent(f.split("/").pop())] = true;
+      });
+      var names = r[0].filter(function (f) { return MOMENT_RE.test(f) && present[f] && !dup[f] && (dup[f] = true); });
+      if (!names.length) return;
+      var order = r[1];
+      names.sort(function (a, b) {
+        var i = order.indexOf(a), j = order.indexOf(b);
+        if (i < 0) i = Infinity;
+        if (j < 0) j = Infinity;
+        return i !== j ? i - j : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+      });
+      r[2].forEach(function (l) {
+        var k = l.indexOf("=");
+        if (k > 0) captions[l.slice(0, k)] = l.slice(k + 1).trim();
+      });
+      // Swap the page's own video for the list.
+      videos.forEach(function (v) { v.pause(); if (seen) seen.unobserve(v); });
+      videos = [];
+      while (list.firstChild) list.removeChild(list.firstChild);
+      names.forEach(function (name) { list.appendChild(build(name, captions[name])); });
+      // Each moment has its own caption now, so the section's one goes.
+      var sectionCaption = document.getElementById("moments-caption");
+      if (sectionCaption) sectionCaption.hidden = true;
+      update();
+    });
 })();
 
 /* The intro photo and the catch video are named in media/page_files.txt
    ("intro=<file>", "catch=<file>"), which /media-admin updates when either
    is renamed. index.html carries the names they had when it was written, so
-   usually nothing changes here; after a rename this swaps the new name in. */
+   usually nothing changes here; after a rename this swaps the new name in.
+   (Once Moments, above, has built its list, #frisbee is gone.) */
 (function pageFiles() {
   var hero = document.querySelector("#top .frame img");
   var v = document.getElementById("frisbee");
@@ -707,7 +807,7 @@
         if (m) names[m[1]] = m[2];
       });
       if (hero && names.intro && differs(hero, names.intro)) hero.src = "media/" + encodeURIComponent(names.intro);
-      if (v && shell && names["catch"] && differs(v, names["catch"])) {
+      if (v && shell && document.contains(v) && names["catch"] && differs(v, names["catch"])) {
         shell.classList.remove("is-empty");
         v.setAttribute("controls", "");
         v.src = "media/" + encodeURIComponent(names["catch"]);
