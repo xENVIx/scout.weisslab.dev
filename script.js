@@ -256,6 +256,113 @@
   });
 })();
 
+/* A stack of cards (slideshow, Moments): els[0] starts on top, with the next
+   couple peeking out below it. go(1) slides the top card out to the left and
+   tucks it under the bottom while the rest move up one; go(-1) brings the
+   bottom card back in from the left onto the top; goTo(i) turns the stack
+   straight to card i. onTop(i) runs whenever card i comes to the top (right
+   away, as the animation starts). The container needs .card-stack and each
+   card .stack-card (style.css); they're placed with inline transforms. */
+var STACK_DEPTH = 3;    // cards visible in a stack
+var STACK_PEEK = 16;    // px each card below the top one sticks out
+var STACK_OUT_MS = 450; // the top card's slide out to the left, as in style.css
+function cardStack(els, onTop) {
+  var reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var order = els.map(function (el, i) { return i; }); // order[0] is on top
+  var busy = false;
+  // Every transform has the same functions in the same order, so the
+  // browser can animate between any two of them.
+  function transform(x, y, scale, deg) {
+    return "translateX(" + x + "%) translateY(" + y + "px) scale(" + scale + ") rotate(" + deg + "deg)";
+  }
+  var OUT = transform(-75, 0, 1, -5);
+  // 0 on top, each one below it a little lower and smaller, and those past
+  // STACK_DEPTH tucked out of sight.
+  function place(i, pos) {
+    var el = els[i], d = Math.min(pos, STACK_DEPTH);
+    el.style.zIndex = String(els.length - pos);
+    el.style.transform = transform(0, d * STACK_PEEK, 1 - d * 0.05, 0);
+    el.style.opacity = pos < STACK_DEPTH ? "" : "0";
+    el.classList.toggle("is-top", pos === 0);
+    el.setAttribute("aria-hidden", pos === 0 ? "false" : "true");
+  }
+  function layout() { order.forEach(place); onTop(order[0]); }
+  function go(dir) {
+    if (busy || els.length < 2) return false;
+    busy = true;
+    var out = reduceMotion ? 0 : STACK_OUT_MS, el;
+    if (dir > 0) {
+      var top = order.shift();
+      order.push(top);
+      el = els[top];
+      order.forEach(function (i, pos) { if (i !== top) place(i, pos); });
+      el.classList.add("is-out");
+      el.classList.remove("is-top");
+      el.style.zIndex = String(els.length + 1);
+      el.style.transform = OUT;
+      onTop(order[0]);
+      setTimeout(function () {
+        el.classList.remove("is-out");
+        place(top, order.length - 1);
+        busy = false;
+      }, out);
+    } else {
+      var back = order.pop();
+      order.unshift(back);
+      el = els[back];
+      el.classList.add("is-out");
+      el.style.transition = "none";
+      el.style.zIndex = String(els.length + 1);
+      el.style.transform = OUT;
+      el.style.opacity = "";
+      void el.offsetWidth;
+      el.style.transition = "";
+      el.classList.remove("is-out");
+      layout();
+      setTimeout(function () { busy = false; }, out);
+    }
+    return true;
+  }
+  function goTo(i) {
+    var steps = order.indexOf(i);
+    if (steps <= 0) return;
+    order = order.slice(steps).concat(order.slice(0, steps));
+    layout();
+  }
+  layout();
+  return { go: go, goTo: goTo, top: function () { return order[0]; } };
+}
+
+/* Dot rows (slideshow, Moments): with more than DOT_WINDOW dots, only a
+   window of them around the current one shows, sliding along as it moves;
+   the dots at an end with more beyond it shrink to hint at them. */
+var DOT_WINDOW = 7;
+function windowDots(wrap, dots, current) {
+  var n = dots.length;
+  if (n <= DOT_WINDOW) return;
+  var strip = wrap.firstChild;
+  if (!strip || !strip.classList || !strip.classList.contains("dot-strip")) {
+    strip = document.createElement("div");
+    strip.className = "dot-strip";
+    dots.forEach(function (d) { strip.appendChild(d); });
+    wrap.appendChild(strip);
+    wrap.classList.add("is-windowed");
+    window.addEventListener("resize", function () { windowDots(wrap, dots, wrap._current); });
+  }
+  wrap._current = current;
+  var step = dots[1].offsetLeft - dots[0].offsetLeft; // a dot plus the gap, which changes on phones
+  var start = Math.max(0, Math.min(current - (DOT_WINDOW - 1) / 2, n - DOT_WINDOW));
+  wrap.style.width = (step * (DOT_WINDOW - 1) + dots[0].offsetWidth) + "px";
+  strip.style.transform = "translateX(" + (-start * step) + "px)";
+  dots.forEach(function (d, j) {
+    var k = j - start, inside = k >= 0 && k < DOT_WINDOW;
+    var fromEnd = Math.min(k, DOT_WINDOW - 1 - k);
+    var more = k < DOT_WINDOW / 2 ? start > 0 : start + DOT_WINDOW < n;
+    d.style.transform = !inside ? "scale(0)" : more && fromEnd === 0 ? "scale(.5)" : more && fromEnd === 1 ? "scale(.75)" : "";
+    d.tabIndex = inside ? 0 : -1;
+  });
+}
+
 (function slideshow() {
   var DIR = "media/";
   var AUTOPLAY_MS = 5000; // default; media/settings.txt's slide_seconds overrides it
@@ -272,7 +379,7 @@
   var nextBtn = document.getElementById("ss-next");
 
   var items = [];
-  var layers = [];
+  var stack = null;
   var dots = [];
   var current = 0;
   var paused = false;
@@ -346,62 +453,47 @@
       if (grid) grid.innerHTML = '<div class="ss-empty">Couldn’t load the photos right now.</div>';
     });
 
+  // The photos as a stack of cards (cardStack): the top one showing, the
+  // next couple peeking out below, and each one sliding out left and under
+  // as the next comes up.
   function start(files) {
-    items = files.map(function (f) {
-      return { file: f, type: VIDEO_RE.test(f) ? "video" : "image", caption: captions[f] || "" };
-    });
-
+    items = files.map(function (f) { return { file: f, caption: captions[f] || "" }; });
     if (!items.length) {
-      stage.innerHTML = '<div class="ss-empty">No photos or videos in the slideshow yet.</div>';
+      stage.innerHTML = '<div class="ss-empty">No photos in the slideshow yet.</div>';
       return;
     }
-
-    items.forEach(function (item, i) {
-      var el;
-      if (item.type === "video") {
-        el = document.createElement("video");
-        el.src = DIR + item.file;
-        el.muted = true;
-        el.playsInline = true;
-        el.controls = true;
-        el.preload = i === 0 ? "auto" : "metadata";
-        // Don't let the fixed autoplay timer cut this off mid-playback —
-        // advance only once the clip actually finishes (see tick()).
-        el.addEventListener("ended", function () {
-          if (i === current) next();
-        });
-        el.addEventListener("timeupdate", function () {
-          if (i === current && el.duration) bar.style.width = (el.currentTime / el.duration * 100) + "%";
-        });
-      } else {
-        el = document.createElement("img");
-        el.src = DIR + item.file;
-        el.alt = item.caption || "Scout";
-        el.loading = i === 0 ? "eager" : "lazy";
-        el.addEventListener("click", function () { openLightbox(el.src, false, item.caption); });
-      }
-      stage.appendChild(el);
-      layers.push(el);
+    var cards = items.map(function (item, i) {
+      var card = document.createElement("div");
+      card.className = "stack-card ss-card";
+      var el = document.createElement("img");
+      el.src = DIR + item.file;
+      el.alt = item.caption || "Scout";
+      el.loading = i < STACK_DEPTH ? "eager" : "lazy";
+      el.addEventListener("click", function () { openLightbox(el.src, false, item.caption); });
+      card.appendChild(el);
 
       var b = document.createElement("button");
       b.type = "button";
-      b.setAttribute("aria-label", (item.type === "video" ? "Video " : "Photo ") + (i + 1));
+      b.setAttribute("aria-label", "Photo " + (i + 1));
       b.appendChild(document.createElement("i"));
       b.addEventListener("click", function () { goTo(i); });
       dotWrap.appendChild(b);
       dots.push(b);
+      return card;
     });
+    stage.classList.add("card-stack");
+    // Bottom of the stack first, so the top card is last in the DOM too.
+    cards.slice().reverse().forEach(function (c) { stage.appendChild(c); });
 
     // The progress bar along the bottom of the photo: a CSS animation as long
     // as AUTOPLAY_MS whose end moves to the next slide, so pausing it (mouse
-    // over the photo, lightbox open) pauses the slideshow too. For a video
-    // it follows the playback position instead.
+    // over the photo, lightbox open) pauses the slideshow too.
     var progress = document.createElement("div");
     progress.className = "ss-progress";
     progress.setAttribute("aria-hidden", "true");
     progress.appendChild(bar);
     stage.appendChild(progress);
-    bar.addEventListener("animationend", function () { advance(1); tick(); });
+    bar.addEventListener("animationend", next);
 
     stage.addEventListener("mouseenter", function () { paused = true; setPaused(); });
     stage.addEventListener("mouseleave", function () { paused = false; setPaused(); });
@@ -425,7 +517,7 @@
     if (prevBtn) prevBtn.addEventListener("click", previous);
     if (nextBtn) nextBtn.addEventListener("click", next);
 
-    show();
+    stack = cardStack(cards, show);
     tick();
   }
 
@@ -488,16 +580,11 @@
     else grid.classList.add("masonry");
   }
 
-  function show() {
-    layers.forEach(function (el, i) {
-      var on = i === current;
-      el.classList.toggle("is-on", on);
-      if (items[i].type === "video") {
-        if (on) { try { el.currentTime = 0; el.play(); } catch (e) {} }
-        else { el.pause(); }
-      }
-    });
-    dots.forEach(function (d, i) { d.setAttribute("aria-current", i === current ? "true" : "false"); });
+  // Card i has come to the top of the stack.
+  function show(i) {
+    current = i;
+    dots.forEach(function (d, j) { d.setAttribute("aria-current", j === current ? "true" : "false"); });
+    windowDots(dotWrap, dots, current);
     if (counter) counter.textContent = pad(current + 1) + " / " + pad(items.length);
     if (captionEl) captionEl.textContent = items[current].caption;
   }
@@ -510,7 +597,7 @@
     bar.style.width = "0";
     var on = AUTOPLAY_MS && items.length > 1;
     bar.parentNode.hidden = !on;
-    if (!on || items[current].type === "video") return; // a video's "ended" event advances instead
+    if (!on) return;
     void bar.offsetWidth;
     bar.style.width = "";
     bar.style.animation = "ss-fill " + AUTOPLAY_MS + "ms linear forwards";
@@ -520,14 +607,9 @@
     bar.style.animationPlayState = paused || (lightbox && !lightbox.hidden) ? "paused" : "running";
   }
 
-  function advance(d) {
-    current = (current + d + items.length) % items.length;
-    show();
-  }
-
-  function next() { advance(1); tick(); }
-  function previous() { advance(-1); tick(); }
-  function goTo(i) { current = i; show(); tick(); }
+  function next() { stack.go(1); tick(); }
+  function previous() { stack.go(-1); tick(); }
+  function goTo(i) { stack.goTo(i); tick(); }
 
   // Click a photo to see it enlarged, then use the scroll wheel to zoom
   // smoothly in and out. Autoplay is paused while the lightbox is open.
@@ -654,7 +736,7 @@
 
 /* Moments: every GIF and video ticked "Moments" at /media-admin (listed in
    media/moments.txt), in display order (order.txt), as a stack of cards: the
-   current one on top, the next couple peeking out below it. A video plays
+   current one on top, the next couple peeking out below it (cardStack). A video plays
    through once and a GIF plays GIF_PLAYS times (its length is read from the
    file's frame delays); then the top
    card slides out to the left and tucks under the bottom of the stack while
@@ -667,12 +749,8 @@
 (function moments() {
   var DIR = "media/";
   var MOMENT_RE = /\.(gif|mp4|webm|mov|m4v)$/i;
-  var OUT_MS = 450;   // the top card's slide out to the left, as in style.css
-  var DEPTH = 3;      // cards visible in the stack
-  var PEEK = 16;      // px each card below sticks out
   var GIF_PLAYS = 4;  // a GIF stays on top for this many runs through
   var FALLBACK_MS = 5000; // a GIF whose length can't be read, or a card that failed to load
-  var reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   var list = document.getElementById("moments-list");
   var first = document.getElementById("video-shell");
   if (!list || !first) return;
@@ -682,13 +760,14 @@
   var controls = document.getElementById("moments-controls");
   var dotWrap = document.getElementById("moments-dots");
 
-  var cards = [];   // in stack order: cards[0] is on top
+  var all = [];     // every card, in moments order
+  var stack = null; // cardStack, once there are cards
   var dots = [];
-  var all = [];     // every card, in moments order (for the dots)
   var videos = [];  // the videos on the page; only the top one plays
-  var timer = null, busy = false, inView = true;
+  var timer = null, inView = true;
 
   function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+  function topCard() { return stack ? all[stack.top()] : null; }
   function sceneUp() {
     var sc = list.closest(".scene");
     return !document.documentElement.classList.contains("scenes") || !sc || sc.classList.contains("is-active");
@@ -697,12 +776,12 @@
   // everything else.
   function update() {
     var up = sceneUp() && inView;
-    var top = cards.length ? cards[0] : null;
+    var top = topCard();
     videos.forEach(function (v) { if (up && (!top || top.video === v)) play(v); else v.pause(); });
     clearTimeout(timer);
-    if (!up || !top || cards.length < 2) return;
+    if (!up || !top || all.length < 2) return;
     var failed = top.el.querySelector(".is-empty");
-    if (failed || !top.video) timer = setTimeout(function () { go(1); }, failed ? FALLBACK_MS : top.ms || FALLBACK_MS);
+    if (failed || !top.video) timer = setTimeout(function () { stack.go(1); }, failed ? FALLBACK_MS : top.ms || FALLBACK_MS);
   }
   if ("IntersectionObserver" in window) {
     new IntersectionObserver(function (entries) {
@@ -720,7 +799,7 @@
     if (v.error) empty();
     v.addEventListener("loadeddata", function () {
       shell.classList.remove("is-empty");
-      if (!cards.length || cards[0].video === v) v.setAttribute("controls", "");
+      if (!stack || topCard().video === v) v.setAttribute("controls", "");
     });
     videos.push(v);
 
@@ -749,7 +828,7 @@
   // the player for a GIF.
   function build(name, caption) {
     var el = document.createElement("div");
-    el.className = "moment";
+    el.className = "moment stack-card";
     var shell = template.cloneNode(true);
     shell.removeAttribute("id");
     Array.prototype.forEach.call(shell.querySelectorAll("[id]"), function (n) { n.removeAttribute("id"); });
@@ -760,7 +839,7 @@
     if (/\.gif$/i.test(name)) {
       var img = document.createElement("img");
       img.alt = caption || "Scout";
-      img.addEventListener("error", function () { shell.classList.add("is-empty"); if (cards[0] === card) update(); });
+      img.addEventListener("error", function () { shell.classList.add("is-empty"); if (topCard() === card) update(); });
       img.src = src;
       gifLength(src).then(function (ms) { if (ms) card.ms = ms * GIF_PLAYS; });
       shell.replaceChild(img, v);
@@ -771,9 +850,9 @@
       v.src = src;
       card.video = v;
       wireVideo(shell, v);
-      v.addEventListener("error", function () { if (cards[0] === card) update(); });
+      v.addEventListener("error", function () { if (topCard() === card) update(); });
       // With more than one, a video plays once and then the stack moves on.
-      v.addEventListener("ended", function () { if (cards[0] === card) go(1); });
+      v.addEventListener("ended", function () { if (topCard() === card) stack.go(1); });
     }
     return card;
   }
@@ -802,79 +881,21 @@
     }).catch(function () { return 0; });
   }
 
-  // Every transform has the same functions in the same order, so the
-  // browser can animate between any two of them.
-  function transform(x, y, scale, deg) {
-    return "translateX(" + x + "%) translateY(" + y + "px) scale(" + scale + ") rotate(" + deg + "deg)";
-  }
-  var OUT = transform(-75, 0, 1, -5);
-
-  // Put a card in its place in the stack: 0 on top, each one below it a
-  // little lower and smaller, and those past DEPTH tucked out of sight.
-  function place(card, i) {
-    var d = Math.min(i, DEPTH);
-    card.el.style.zIndex = String(cards.length - i);
-    card.el.style.transform = transform(0, d * PEEK, 1 - d * 0.05, 0);
-    card.el.style.opacity = i < DEPTH ? "" : "0";
-    card.el.classList.toggle("is-top", i === 0);
-    if (card.video) {
-      card.video.loop = cards.length === 1;
-      if (i === 0 && !card.el.querySelector(".is-empty")) card.video.setAttribute("controls", "");
-      else card.video.removeAttribute("controls");
-    }
-    card.el.setAttribute("aria-hidden", i === 0 ? "false" : "true");
-  }
-  function layout() {
-    cards.forEach(place);
-    var top = cards[0];
+  // Card i has come to the top: only its video has controls (and loops, if
+  // it's the only one), the caption and dots follow it, and it starts over.
+  function show(i) {
+    var top = all[i];
+    all.forEach(function (card) {
+      if (!card.video) return;
+      card.video.loop = all.length === 1;
+      if (card === top && !card.el.querySelector(".is-empty")) card.video.setAttribute("controls", "");
+      else { card.video.removeAttribute("controls"); card.video.pause(); }
+    });
     if (captionEl) captionEl.textContent = top.caption || defaultCaption;
-    dots.forEach(function (d, j) { d.setAttribute("aria-current", all[j] === top ? "true" : "false"); });
+    dots.forEach(function (d, j) { d.setAttribute("aria-current", j === i ? "true" : "false"); });
+    if (dots.length) windowDots(dotWrap, dots, i);
     if (top.video) { try { top.video.currentTime = 0; } catch (e) {} }
-    update();
-  }
-
-  // Forward: the top card slides out left, then goes under the bottom while
-  // the rest move up. Back: the bottom card comes in from the left on top.
-  function go(dir) {
-    if (busy || cards.length < 2) return;
-    busy = true;
-    clearTimeout(timer);
-    var out = reduceMotion ? 0 : OUT_MS;
-    if (dir > 0) {
-      var top = cards.shift();
-      cards.push(top);
-      if (top.video) top.video.pause();
-      cards.forEach(function (c, i) { if (c !== top) place(c, i); });
-      top.el.classList.add("is-out");
-      top.el.style.zIndex = String(cards.length + 1);
-      top.el.style.transform = OUT;
-      setTimeout(function () {
-        top.el.classList.remove("is-out");
-        busy = false;
-        layout();
-      }, out);
-    } else {
-      var back = cards.pop();
-      cards.unshift(back);
-      back.el.classList.add("is-out");
-      back.el.style.transition = "none";
-      back.el.style.zIndex = String(cards.length + 1);
-      back.el.style.transform = OUT;
-      back.el.style.opacity = "";
-      void back.el.offsetWidth;
-      back.el.style.transition = "";
-      back.el.classList.remove("is-out");
-      layout();
-      setTimeout(function () { busy = false; }, out);
-    }
-  }
-  function goTo(card) {
-    var steps = cards.indexOf(card);
-    if (steps <= 0) return;
-    // Jumping by a dot: rotate straight to it, no card-by-card shuffle.
-    cards = cards.slice(steps).concat(cards.slice(0, steps));
-    cards.forEach(function (c) { if (c.video) c.video.pause(); });
-    layout();
+    if (stack) update(); // the first call comes from cardStack itself, before stack is set
   }
 
   function fetchLines(name) {
@@ -909,27 +930,27 @@
       videos.forEach(function (v) { v.pause(); });
       videos = [];
       while (list.firstChild) list.removeChild(list.firstChild);
-      list.classList.add("moments-stack");
+      list.classList.add("moments-stack", "card-stack");
       all = names.map(function (name) { return build(name, captions[name]); });
-      cards = all.slice();
       // Bottom of the stack first, so the top card is last in the DOM too.
-      cards.slice().reverse().forEach(function (c) { list.appendChild(c.el); });
+      all.slice().reverse().forEach(function (c) { list.appendChild(c.el); });
 
-      if (cards.length > 1 && controls && dotWrap) {
+      if (all.length > 1 && controls && dotWrap) {
         all.forEach(function (card, i) {
           var b = document.createElement("button");
           b.type = "button";
           b.setAttribute("aria-label", "Moment " + (i + 1) + " of " + all.length);
           b.appendChild(document.createElement("i"));
-          b.addEventListener("click", function () { goTo(card); });
+          b.addEventListener("click", function () { stack.goTo(i); });
           dotWrap.appendChild(b);
           dots.push(b);
         });
-        document.getElementById("moments-prev").addEventListener("click", function () { go(-1); });
-        document.getElementById("moments-next").addEventListener("click", function () { go(1); });
+        document.getElementById("moments-prev").addEventListener("click", function () { stack.go(-1); });
+        document.getElementById("moments-next").addEventListener("click", function () { stack.go(1); });
         controls.hidden = false;
       }
-      layout();
+      stack = cardStack(all.map(function (c) { return c.el; }), show);
+      update();
     });
 })();
 

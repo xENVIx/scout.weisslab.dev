@@ -119,7 +119,7 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 .scenes .scene > :last-child { margin-block: auto; }
 .scenes .band { border-top: 0; }
 /* Keep the whole slideshow (header, photo, caption, controls) on one screen. */
-.scenes #slideshow-stage { max-height: calc(100vh - 380px); min-height: 200px; }
+.scenes #slideshow-stage { max-height: calc(100vh - 428px); min-height: 200px; } /* 48px of it for the stack peeking out */
 @media (prefers-reduced-motion: reduce) {
   .scenes .scene { transform: none !important; }
 }
@@ -207,29 +207,29 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 }
 
 /* ---- slideshow (markup in index.html, behaviour in script.js) ---- */
-#slideshow-stage {
-  position: relative; width: 100%; aspect-ratio: 3 / 2;
+/* A stack of cards (slideshow, Moments): script.js (cardStack) places each
+   card with an inline transform and z-index, the top one .is-top and the
+   ones below peeking out under it. .is-out is the top card's slide out to
+   the left, before it tucks under the bottom. Only the top card takes
+   clicks. */
+.card-stack { position: relative; margin-bottom: 48px; }
+.card-stack .stack-card {
+  position: absolute; inset: 0; transform-origin: 50% 100%;
+  transition: transform 600ms cubic-bezier(.2,.7,.2,1), opacity 600ms ease;
+}
+.card-stack .stack-card.is-out { transition: transform 450ms cubic-bezier(.4,0,.7,.2), opacity 450ms ease; }
+.card-stack .stack-card:not(.is-top) { pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .card-stack .stack-card, .card-stack .stack-card.is-out { transition: none; } }
+
+#slideshow-stage { position: relative; width: 100%; aspect-ratio: 3 / 2; touch-action: pan-y; }
+.ss-card {
   background-color: var(--paper); border: 1px solid var(--rule); border-radius: 3px;
-  overflow: hidden; touch-action: pan-y;
+  overflow: hidden; box-shadow: 0 10px 28px rgba(64,42,25,.14);
 }
-#slideshow-stage img,
-#slideshow-stage video {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%;
-  object-fit: contain;
-  opacity: 0; transition: opacity 900ms cubic-bezier(.4,0,.2,1);
-}
-#slideshow-stage img.is-on,
-#slideshow-stage video.is-on { opacity: 1; }
-/* Only the visible slide should receive clicks — otherwise a stacked,
-   invisible layer underneath silently steals the click. */
-#slideshow-stage img,
-#slideshow-stage video { pointer-events: none; }
-#slideshow-stage img.is-on,
-#slideshow-stage video.is-on { pointer-events: auto; }
+.ss-card img { display: block; width: 100%; height: 100%; object-fit: contain; }
 /* Fills over each photo's time on screen; script.js drives it. */
 .ss-progress {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; height: 3px;
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 10000; height: 3px; /* over every card */
   background: rgba(219,200,174,.45); pointer-events: none;
 }
 .ss-progress[hidden] { display: none; }
@@ -263,6 +263,10 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 /* Arrows stay on one row; with many slides the dots wrap between them. */
 .ss-dots { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; justify-content: center; min-width: 0; }
 @media (max-width: 640px) { .ss-dots { gap: 4px 6px; } }
+/* Lots of dots: script.js shows a sliding window of them (windowDots). */
+.ss-dots.is-windowed { display: block; overflow: hidden; flex: none; }
+.dot-strip { display: flex; gap: inherit; transition: transform 300ms ease; }
+.dot-strip button { transition: transform 300ms ease; }
 .ss-dots button {
   width: 22px; height: 22px; padding: 0; flex: none;
   display: grid; place-items: center;
@@ -316,23 +320,14 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 }
 
 #moments .caption { margin-inline: auto; text-align: center; }
-/* Moments: a stack of cards, the top one showing (script.js places each
-   card with an inline transform and z-index). .is-out is the top card's
-   slide out to the left, before it tucks under the bottom. */
-/* The cards are all absolutely placed, so the section needs its width set
+/* Moments: a stack of cards like the slideshow's (.card-stack, above).
+   The cards are all absolutely placed, so the section needs its width set
    (in a scene's flex column it would otherwise shrink to fit). */
 #moments { width: 100%; }
-.moments-stack { position: relative; aspect-ratio: 16 / 9; margin-bottom: 48px; }
-.moments-stack .moment {
-  position: absolute; inset: 0; transform-origin: 50% 100%;
-  transition: transform 600ms cubic-bezier(.2,.7,.2,1), opacity 600ms ease;
-}
-.moments-stack .moment.is-out { transition: transform 450ms cubic-bezier(.4,0,.7,.2), opacity 450ms ease; }
+.moments-stack { aspect-ratio: 16 / 9; }
 .moments-stack .video-shell { height: 100%; box-shadow: 0 10px 28px rgba(64,42,25,.14); }
-.moments-stack .moment:not(.is-top) { pointer-events: none; }
 .moments-stack .moment:not(.is-top) .sound { display: none; }
 .ss-controls[hidden] { display: none; }
-@media (prefers-reduced-motion: reduce) { .moments-stack .moment, .moments-stack .moment.is-out { transition: none; } }
 
 /* ---- gallery grid (filled by script.js from media/) ----
    .masonry: rows are 1px and script.js makes each tile span its own height
@@ -489,9 +484,6 @@ footer .eyebrow { margin-top: 14px; }
   .scenes .scene:not(#top) :is(.wrap, .narrow, .mid) { padding-left: 60px; padding-right: 34px; }
   .frame img { aspect-ratio: 499 / 934; }
   .frame { width: min(100%, 260px); }
-}
-@media (prefers-reduced-motion: reduce) {
-  #slideshow-stage img, #slideshow-stage video { transition: none; }
 }
 
 /* Re-assert the light palette if anything tries to serve a dark treatment. */
