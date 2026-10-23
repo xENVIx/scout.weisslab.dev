@@ -11,6 +11,8 @@ There's one admin password: `ADMIN_PASSWORD` in `/etc/scout-media.env`. Signing 
 - `GET /api/messages/photo/<id>` serves a photo once its message is approved; `/messages-admin/photo/<id>` serves it to the admin any time.
 - `/messages-admin` is the approval page, behind the admin sign-in (above). Each message can be approved, hidden or deleted, and one with a photo can have just the photo removed, or copied into `media/` ("Copy to my media", with Gallery / Slideshow, or Moments for a GIF, and optionally its text as the caption).
 
+Each new message is emailed to `NOTIFY_EMAIL` (in `/etc/scout-messages.env`; leave it out to turn emails off), from `NOTIFY_FROM` (default `scout@inlovingmemoryofscout.com`), with a link to `/messages-admin`. `messages.js` hands it to the server's Postfix on `127.0.0.1:25` (the service's sandbox can't run `sendmail`), and Postfix delivers it directly, saying `HELO inlovingmemoryofscout.com` (`smtp_helo_name`). Gmail only accepts it because the domain's DNS has an SPF record, `v=spf1 ip4:134.199.206.222 ~all`, and the droplet is named `inlovingmemoryofscout.com` (its reverse DNS). Delivery is logged in `/var/log/mail.log`.
+
 Messages are stored in `/var/lib/scout-messages/messages.json`, outside the web root, with their photos in `/var/lib/scout-messages/photos/`. (systemd's `DynamicUser` puts them under `/var/lib/private/scout-messages/`.)
 
 Copying a photo into `media/` goes through the media manager, since only it can write there: `messages.js` POSTs the file to `http://127.0.0.1:3312/internal/import` with an `X-Import-Token` header. Both env files hold the same `IMPORT_TOKEN`; the media manager refuses the request without it, or if it came through nginx (which never proxies `/internal/` anyway).

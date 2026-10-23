@@ -28,6 +28,10 @@ var PORT = Number(process.env.PORT) || 3311;
 var HOST = "127.0.0.1";
 var SESSION_SECRET = process.env.SESSION_SECRET || "";
 var IMPORT_TOKEN = process.env.IMPORT_TOKEN || "";
+// Each new message is emailed to NOTIFY_EMAIL (if set), through the
+// server's own Postfix on 127.0.0.1:25, from NOTIFY_FROM.
+var NOTIFY_EMAIL = process.env.NOTIFY_EMAIL || "";
+var NOTIFY_FROM = process.env.NOTIFY_FROM || "scout@inlovingmemoryofscout.com";
 var MEDIA_PORT = Number(process.env.MEDIA_PORT) || 3312;
 var STATE = process.env.STATE_DIRECTORY || path.join(__dirname, "data");
 var DATA_FILE = path.join(STATE, "messages.json");
@@ -222,6 +226,51 @@ function create(req, res) {
     messages.push(m);
     save();
     json(res, 201, { ok: true });
+    notify(m, req.headers.host);
+  });
+}
+
+// ---- email: "a new message is waiting" ----
+
+// Hand one plain-text email to Postfix on 127.0.0.1:25: a tiny SMTP client
+// that waits for each reply before sending the next command.
+function sendMail(to, subject, text, cb) {
+  var net = require("net");
+  var body = text.replace(/\r?\n/g, "\r\n").replace(/^\./gm, ".."); // dot-stuffing
+  var steps = [
+    "HELO localhost",
+    "MAIL FROM:<" + NOTIFY_FROM + ">",
+    "RCPT TO:<" + to + ">",
+    "DATA",
+    "From: Scout memorial <" + NOTIFY_FROM + ">\r\nTo: <" + to + ">\r\nSubject: " + subject +
+      "\r\nDate: " + new Date().toUTCString() + "\r\nMessage-ID: <" + crypto.randomUUID() + "@" + NOTIFY_FROM.split("@")[1] + ">" +
+      "\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + body + "\r\n.",
+    "QUIT"
+  ];
+  var sock = net.connect(25, "127.0.0.1"), buf = "", done = false;
+  function finish(err) { if (!done) { done = true; sock.destroy(); cb(err); } }
+  sock.setTimeout(15000, function () { finish(new Error("timed out")); });
+  sock.on("error", finish);
+  sock.on("data", function (d) {
+    buf += d.toString("utf8");
+    var lines = buf.split("\r\n");
+    var last = lines[lines.length - 2];
+    if (!last || last.charAt(3) === "-") return; // wait for the whole reply
+    buf = "";
+    if (!/^[23]/.test(last)) return finish(new Error(last));
+    if (!steps.length) return finish(null);
+    sock.write(steps.shift() + "\r\n");
+  });
+}
+
+function notify(m, host) {
+  if (!NOTIFY_EMAIL) return;
+  var what = m.photo ? (m.text ? "a message and a photo" : "a photo") : "a message";
+  var text = "Someone left " + what + " for Scout. It's waiting for your approval:\n\n" +
+    "https://" + (host || "inlovingmemoryofscout.com") + "/messages-admin\n\n" +
+    (m.text ? "Their message:\n\n" + m.text + "\n" : "(No message, just a photo.)\n");
+  sendMail(NOTIFY_EMAIL, "New " + (m.photo && !m.text ? "photo" : "message") + " for Scout", text, function (err) {
+    if (err) console.error("couldn't email " + NOTIFY_EMAIL + ": " + err.message);
   });
 }
 
