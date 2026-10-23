@@ -17,7 +17,7 @@ systemctl daemon-reload && systemctl enable --now scout-messages
 cat /etc/scout-messages.env   # the admin password
 ```
 
-The nginx rules are in `nginx-messages.conf`. They're already applied to `/etc/nginx/sites-available/inlovingmemoryofscout.com`.
+The nginx rules are in `nginx-site.conf`, which every domain serving the site includes. nginx passes the domain on as `Host`, and admin POSTs must come from a page on that same domain.
 
 After editing `messages.js`, run `systemctl restart scout-messages`.
 
@@ -37,4 +37,4 @@ cp server/scout-media.service /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now scout-media
 ```
 
-The nginx rule is in `nginx-media.conf` and is already applied. After editing `media.js`, run `systemctl restart scout-media`.
+The nginx rule is in `nginx-site.conf`. After editing `media.js`, run `systemctl restart scout-media`.

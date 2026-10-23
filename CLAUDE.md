@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A static, single-page memorial site for Scout (a dog), served live at inlovingmemoryofscout.com. There is no build step, package manager, linter, or test suite: plain HTML/CSS/vanilla JS (ES5 style, IIFEs, `var`). This directory **is** the nginx document root, so edits on disk are live immediately.
 
-- Server config: `/etc/nginx/sites-available/inlovingmemoryofscout.com` (outside the repo). After changing it: `sudo nginx -t && sudo systemctl reload nginx`. It sends `Cache-Control: no-cache` for HTML/CSS/JS/TXT (a `map` at the top of the file), so browsers revalidate those on every visit instead of using a stale copy.
+- Server config: the site's nginx rules (root, media autoindex, backend proxies, deny rules, cache header) live in `server/nginx-site.conf`, which every domain's `listen 443` block in `/etc/nginx/sites-available/` includes (currently `inlovingmemoryofscout.com` and `scout.weisslab.dev`). To serve the site on another domain, give it a server block with its `server_name`, certificate and `include /var/www/inlovingmemoryofscout.com/html/server/nginx-site.conf;` — nothing in the page or backends is tied to a domain. After changing any of it: `sudo nginx -t && sudo systemctl reload nginx`. It sends `Cache-Control: no-cache` for HTML/CSS/JS/TXT (the `map` is in `/etc/nginx/conf.d/scout-cache.conf`), so browsers revalidate those on every visit instead of using a stale copy.
 - Local preview: `python3 -m http.server` works for the page itself, but the slideshow will show its error state because it depends on nginx's autoindex HTML (see below).
 
 ## Live site vs. leftover files
@@ -30,7 +30,7 @@ The page doesn't scroll as one document. Each of the six parts (intro, dedicatio
 
 ## Slideshow mechanism
 
-`script.js` fetches `media/` and parses the **nginx autoindex** HTML listing (`autoindex on` for `location /media/` in the nginx config) to discover files. Consequences:
+`script.js` fetches `media/` and parses the **nginx autoindex** HTML listing (`autoindex on` for `location /media/` in `server/nginx-site.conf`) to discover files. Consequences:
 - Two plain-text lists in `media/` (one filename per line, edited via the Gallery / Slideshow checkboxes at `/media-admin`) decide what's used, independently: `not_in_gallery.txt` = files left out of the gallery (default: in it), `slideshow.txt` = files in the slideshow (default: not). A new upload appears in the gallery but not the slideshow until it's ticked.
 - Order: `media/order.txt` (one filename per line, set by dragging rows in the "Display order" view at `/media-admin`) comes first; files it doesn't name follow in natural filename order. With no `order.txt`, it's purely by filename.
 - Captions: `media/captions.txt`, `<file>=<caption>` lines, edited per file at `/media-admin`. Shown (as text) under the slideshow (`#slideshow-caption`) and at the bottom of the lightbox.

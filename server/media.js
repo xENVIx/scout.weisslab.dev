@@ -26,7 +26,6 @@ var crypto = require("crypto");
 
 var PORT = Number(process.env.PORT) || 3312;
 var HOST = "127.0.0.1";
-var SITE_ORIGIN = process.env.SITE_ORIGIN || "https://inlovingmemoryofscout.com";
 var ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 var MEDIA_ROOT = process.env.MEDIA_ROOT || path.join(__dirname, "..", "media");
 
@@ -256,9 +255,12 @@ function loginPage(res, error) {
 
 // Admin POSTs must come from this site's own pages, not a form on some other
 // site (SameSite=Strict already blocks that; this is a second check).
+// The site is served under several domains, so "this site" is whichever
+// one the request came in on (nginx passes it on as Host).
 function sameOrigin(req) {
   var o = req.headers.origin || req.headers.referer || "";
-  return o === SITE_ORIGIN || o.indexOf(SITE_ORIGIN + "/") === 0;
+  var site = "https://" + (req.headers.host || "");
+  return o === site || o.indexOf(site + "/") === 0;
 }
 
 function readForm(req, cb) {
