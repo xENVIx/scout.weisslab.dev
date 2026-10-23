@@ -316,9 +316,23 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 }
 
 #moments .caption { margin-inline: auto; text-align: center; }
-/* Moments: every ticked GIF and video, one under another (script.js). */
-.moments-list { display: grid; gap: clamp(28px, 5vw, 56px); }
-#moments .moments-list .caption { margin-top: clamp(12px, 1.8vw, 16px); }
+/* Moments: a stack of cards, the top one showing (script.js places each
+   card with an inline transform and z-index). .is-out is the top card's
+   slide out to the left, before it tucks under the bottom. */
+/* The cards are all absolutely placed, so the section needs its width set
+   (in a scene's flex column it would otherwise shrink to fit). */
+#moments { width: 100%; }
+.moments-stack { position: relative; aspect-ratio: 16 / 9; margin-bottom: 48px; }
+.moments-stack .moment {
+  position: absolute; inset: 0; transform-origin: 50% 100%;
+  transition: transform 600ms cubic-bezier(.2,.7,.2,1), opacity 600ms ease;
+}
+.moments-stack .moment.is-out { transition: transform 450ms cubic-bezier(.4,0,.7,.2), opacity 450ms ease; }
+.moments-stack .video-shell { height: 100%; box-shadow: 0 10px 28px rgba(64,42,25,.14); }
+.moments-stack .moment:not(.is-top) { pointer-events: none; }
+.moments-stack .moment:not(.is-top) .sound { display: none; }
+.ss-controls[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .moments-stack .moment, .moments-stack .moment.is-out { transition: none; } }
 
 /* ---- gallery grid (filled by script.js from media/) ----
    .masonry: rows are 1px and script.js makes each tile span its own height

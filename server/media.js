@@ -373,7 +373,8 @@ function action(req, res) {
       if (!exists) return json(res, 400, { error: "That file is gone." });
       try {
         setFlag(GALLERY_OUT_LIST, f.file, f.gallery !== "1");
-        setFlag(SLIDES_LIST, f.file, f.slideshow === "1");
+        // GIFs and videos go in Moments, never the slideshow.
+        setFlag(SLIDES_LIST, f.file, f.slideshow === "1" && !MOMENT_EXT.test(f.file));
         if (MOMENT_EXT.test(f.file)) setFlag(MOMENTS_LIST, f.file, f.moments === "1");
       } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
       return json(res, 200, { ok: true });
@@ -470,7 +471,7 @@ function adminPage(req, res, query) {
   };
   var toggle = files.length ? '<div class="view">' + viewLink("type", "By type") + viewLink("order", "Display order") + '</div>' : '';
 
-  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> puts it in the slideshow; <b>Moments</b> (GIFs and videos) puts it in the Moments section, one under another. New uploads are in the gallery but not the slideshow, and go at the end. ' +
+  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> (photos) puts it in the slideshow; <b>Moments</b> (GIFs and videos) puts it in the Moments section, a stack that moves on by itself: a video after it plays once, a GIF after four plays. New uploads are in the gallery but not the slideshow, and go at the end. ' +
     'To change the order, switch to <b>Display order</b> and drag a file by its ⠿ handle. A caption shows under the photo in the slideshow and the enlarged view.</p>';
 
   var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -522,7 +523,7 @@ function adminPage(req, res, query) {
     '<form method="post" class="settings"><input type="hidden" name="action" value="settings">' +
     '<label>Seconds each photo shows <input type="number" name="slide_seconds" min="1" max="' + MAX_SLIDE_SECONDS + '" step="0.5" value="' + esc(slideSeconds()) + '" required></label> ' +
     '<button class="primary">Save</button></form>' +
-    '<p class="hint">Videos in the slideshow always play to the end before it moves on.</p>' +
+
     '<h2 id="memorial">Memorial text</h2>' +
     '<p class="hint">This is the text in the Memorial section. Leave a blank line between paragraphs; the first paragraph gets the large first letter.</p>' +
     '<form method="post" class="memorial"><input type="hidden" name="action" value="memorial">' +
@@ -537,8 +538,9 @@ function adminPage(req, res, query) {
 function flagBoxes(file, gallery, slides, moments) {
   return '<div class="flags" data-file="' + esc(file) + '">' +
     '<label><input type="checkbox" class="flag-gallery"' + (gallery ? ' checked' : '') + '> Gallery</label>' +
-    '<label><input type="checkbox" class="flag-slides"' + (slides ? ' checked' : '') + '> Slideshow</label>' +
-    (MOMENT_EXT.test(file) ? '<label><input type="checkbox" class="flag-moments"' + (moments ? ' checked' : '') + '> Moments</label>' : '') +
+    (MOMENT_EXT.test(file)
+      ? '<label><input type="checkbox" class="flag-moments"' + (moments ? ' checked' : '') + '> Moments</label>'
+      : '<label><input type="checkbox" class="flag-slides"' + (slides ? ' checked' : '') + '> Slideshow</label>') +
     '<span class="saved" aria-live="polite"></span></div>';
 }
 
@@ -564,9 +566,9 @@ function adminClient() {
     var slide = 0, galleryN = 0, momentN = 0;
     rows.forEach(function (r) {
       var where = r.querySelector(".where"), gallery = r.querySelector(".flag-gallery"), slides = r.querySelector(".flag-slides"), moments = r.querySelector(".flag-moments");
-      if (!where || !slides) return;
+      if (!where) return;
       var parts = [];
-      if (slides.checked) parts.push("Slide " + (++slide));
+      if (slides && slides.checked) parts.push("Slide " + (++slide));
       if (gallery && gallery.checked) parts.push("Gallery " + (++galleryN));
       if (moments && moments.checked) parts.push("Moment " + (++momentN));
       where.textContent = parts.length ? parts.join(" · ") : "Not on the page";
@@ -578,10 +580,10 @@ function adminClient() {
     var gallery = box.querySelector(".flag-gallery"), slides = box.querySelector(".flag-slides"), moments = box.querySelector(".flag-moments"), note = box.querySelector(".saved");
     function save() {
       renumber();
-      report(note, post({ action: "flags", file: box.getAttribute("data-file"), gallery: gallery && gallery.checked ? "1" : "", slideshow: slides.checked ? "1" : "", moments: moments && moments.checked ? "1" : "" }));
+      report(note, post({ action: "flags", file: box.getAttribute("data-file"), gallery: gallery && gallery.checked ? "1" : "", slideshow: slides && slides.checked ? "1" : "", moments: moments && moments.checked ? "1" : "" }));
     }
     if (gallery) gallery.addEventListener("change", save);
-    slides.addEventListener("change", save);
+    if (slides) slides.addEventListener("change", save);
     if (moments) moments.addEventListener("change", save);
   });
   // Captions save when you leave the box (or press Enter).

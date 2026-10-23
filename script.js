@@ -337,7 +337,8 @@
         return i !== j ? i - j : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
       });
       buildGrid(files.filter(function (f) { return !notInGallery[f]; }));
-      start(files.filter(function (f) { return inSlideshow[f]; }));
+      // Still photos only: GIFs and videos belong to Moments.
+      start(files.filter(function (f) { return inSlideshow[f] && IMAGE_RE.test(f) && !/\.gif$/i.test(f); }));
     })
     .catch(function (err) {
       console.error("slideshow: could not read " + DIR, err);
@@ -652,34 +653,63 @@
 })();
 
 /* Moments: every GIF and video ticked "Moments" at /media-admin (listed in
-   media/moments.txt), one under another in display order (order.txt), each
-   with its caption from captions.txt if it has one (in place of the
-   section's own caption). Each video loops, muted,
-   with its own sound button, and plays only while it's on screen and its
-   scene is up. With nothing ticked, the video in index.html stays as it is.
-   One that fails to load gets .is-empty, which shows a placeholder. */
+   media/moments.txt), in display order (order.txt), as a stack of cards: the
+   current one on top, the next couple peeking out below it. A video plays
+   through once and a GIF plays GIF_PLAYS times (its length is read from the
+   file's frame delays); then the top
+   card slides out to the left and tucks under the bottom of the stack while
+   the rest move up one. The arrows and dots go back and forth by hand.
+   Under the stack is the top card's caption from captions.txt, or the
+   section's own caption if it has none. Videos are muted, with a sound
+   button, and play only while the scene is up and the stack is on screen.
+   With nothing ticked, the video in index.html stays as it is. One that
+   fails to load gets .is-empty, which shows a placeholder. */
 (function moments() {
   var DIR = "media/";
   var MOMENT_RE = /\.(gif|mp4|webm|mov|m4v)$/i;
+  var OUT_MS = 450;   // the top card's slide out to the left, as in style.css
+  var DEPTH = 3;      // cards visible in the stack
+  var PEEK = 16;      // px each card below sticks out
+  var GIF_PLAYS = 4;  // a GIF stays on top for this many runs through
+  var FALLBACK_MS = 5000; // a GIF whose length can't be read, or a card that failed to load
+  var reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   var list = document.getElementById("moments-list");
   var first = document.getElementById("video-shell");
   if (!list || !first) return;
   var template = first.cloneNode(true);
-  var videos = [];
+  var captionEl = document.getElementById("moments-caption");
+  var defaultCaption = captionEl ? captionEl.textContent : "";
+  var controls = document.getElementById("moments-controls");
+  var dotWrap = document.getElementById("moments-dots");
+
+  var cards = [];   // in stack order: cards[0] is on top
+  var dots = [];
+  var all = [];     // every card, in moments order (for the dots)
+  var videos = [];  // the videos on the page; only the top one plays
+  var timer = null, busy = false, inView = true;
 
   function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
   function sceneUp() {
     var sc = list.closest(".scene");
     return !document.documentElement.classList.contains("scenes") || !sc || sc.classList.contains("is-active");
   }
+  // Play the top card's video (or time its GIF) while it can be seen; pause
+  // everything else.
   function update() {
-    var up = sceneUp();
-    videos.forEach(function (v) { if (up && v._inView) play(v); else v.pause(); });
+    var up = sceneUp() && inView;
+    var top = cards.length ? cards[0] : null;
+    videos.forEach(function (v) { if (up && (!top || top.video === v)) play(v); else v.pause(); });
+    clearTimeout(timer);
+    if (!up || !top || cards.length < 2) return;
+    var failed = top.el.querySelector(".is-empty");
+    if (failed || !top.video) timer = setTimeout(function () { go(1); }, failed ? FALLBACK_MS : top.ms || FALLBACK_MS);
   }
-  var seen = "IntersectionObserver" in window ? new IntersectionObserver(function (entries) {
-    entries.forEach(function (e) { e.target._inView = e.isIntersecting; });
-    update();
-  }, { threshold: 0.25 }) : null;
+  if ("IntersectionObserver" in window) {
+    new IntersectionObserver(function (entries) {
+      inView = entries[entries.length - 1].isIntersecting;
+      update();
+    }, { threshold: 0.25 }).observe(list);
+  }
   document.addEventListener("scenechange", update);
 
   function wireVideo(shell, v) {
@@ -688,9 +718,11 @@
     // Only a real error counts: networkState reads NO_SOURCE for a moment
     // before the browser starts loading, which used to hide a working video.
     if (v.error) empty();
-    v.addEventListener("loadeddata", function () { shell.classList.remove("is-empty"); v.setAttribute("controls", ""); });
+    v.addEventListener("loadeddata", function () {
+      shell.classList.remove("is-empty");
+      if (!cards.length || cards[0].video === v) v.setAttribute("controls", "");
+    });
     videos.push(v);
-    if (seen) seen.observe(v); else v._inView = true;
 
     // It plays muted (browsers only autoplay silent video); this button turns
     // the sound on and off, and follows the player's own mute control too.
@@ -713,37 +745,136 @@
   wireVideo(first, first.querySelector("video"));
   update();
 
-  // One moment: a copy of the shell in index.html, with an <img> in place of
-  // the player for a GIF, and its caption underneath.
+  // One card: a copy of the shell in index.html, with an <img> in place of
+  // the player for a GIF.
   function build(name, caption) {
-    var wrap = document.createElement("div");
-    wrap.className = "moment";
+    var el = document.createElement("div");
+    el.className = "moment";
     var shell = template.cloneNode(true);
     shell.removeAttribute("id");
-    Array.prototype.forEach.call(shell.querySelectorAll("[id]"), function (el) { el.removeAttribute("id"); });
+    Array.prototype.forEach.call(shell.querySelectorAll("[id]"), function (n) { n.removeAttribute("id"); });
     var v = shell.querySelector("video");
     var src = DIR + encodeURIComponent(name);
-    wrap.appendChild(shell);
+    el.appendChild(shell);
+    var card = { el: el, caption: caption, video: null };
     if (/\.gif$/i.test(name)) {
       var img = document.createElement("img");
       img.alt = caption || "Scout";
-      img.loading = "lazy";
-      img.addEventListener("error", function () { shell.classList.add("is-empty"); });
+      img.addEventListener("error", function () { shell.classList.add("is-empty"); if (cards[0] === card) update(); });
       img.src = src;
+      gifLength(src).then(function (ms) { if (ms) card.ms = ms * GIF_PLAYS; });
       shell.replaceChild(img, v);
       var sound = shell.querySelector(".sound");
       if (sound) shell.removeChild(sound);
     } else {
+      v.removeAttribute("controls");
       v.src = src;
+      card.video = v;
       wireVideo(shell, v);
+      v.addEventListener("error", function () { if (cards[0] === card) update(); });
+      // With more than one, a video plays once and then the stack moves on.
+      v.addEventListener("ended", function () { if (cards[0] === card) go(1); });
     }
-    if (caption) {
-      var p = document.createElement("p");
-      p.className = "caption";
-      p.textContent = caption;
-      wrap.appendChild(p);
+    return card;
+  }
+
+  // How long one run through a GIF takes, in ms: the sum of its frames'
+  // delays (in 1/100 s; browsers play 0 or 1 as 10). 0 if it can't be read.
+  function gifLength(src) {
+    return fetch(src).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+      var b = new Uint8Array(buf), i = 13, total = 0;
+      function skipBlocks() { while (i < b.length && b[i]) i += b[i] + 1; i++; }
+      if (b[10] & 0x80) i += 3 << ((b[10] & 7) + 1);
+      while (i < b.length) {
+        if (b[i] === 0x21) {
+          if (b[i + 1] === 0xF9) { var d = b[i + 4] | (b[i + 5] << 8); total += d < 2 ? 10 : d; }
+          i += 2;
+          skipBlocks();
+        } else if (b[i] === 0x2C) {
+          var packed = b[i + 9];
+          i += 10;
+          if (packed & 0x80) i += 3 << ((packed & 7) + 1);
+          i++; // LZW code size
+          skipBlocks();
+        } else break;
+      }
+      return total * 10;
+    }).catch(function () { return 0; });
+  }
+
+  // Every transform has the same functions in the same order, so the
+  // browser can animate between any two of them.
+  function transform(x, y, scale, deg) {
+    return "translateX(" + x + "%) translateY(" + y + "px) scale(" + scale + ") rotate(" + deg + "deg)";
+  }
+  var OUT = transform(-75, 0, 1, -5);
+
+  // Put a card in its place in the stack: 0 on top, each one below it a
+  // little lower and smaller, and those past DEPTH tucked out of sight.
+  function place(card, i) {
+    var d = Math.min(i, DEPTH);
+    card.el.style.zIndex = String(cards.length - i);
+    card.el.style.transform = transform(0, d * PEEK, 1 - d * 0.05, 0);
+    card.el.style.opacity = i < DEPTH ? "" : "0";
+    card.el.classList.toggle("is-top", i === 0);
+    if (card.video) {
+      card.video.loop = cards.length === 1;
+      if (i === 0 && !card.el.querySelector(".is-empty")) card.video.setAttribute("controls", "");
+      else card.video.removeAttribute("controls");
     }
-    return wrap;
+    card.el.setAttribute("aria-hidden", i === 0 ? "false" : "true");
+  }
+  function layout() {
+    cards.forEach(place);
+    var top = cards[0];
+    if (captionEl) captionEl.textContent = top.caption || defaultCaption;
+    dots.forEach(function (d, j) { d.setAttribute("aria-current", all[j] === top ? "true" : "false"); });
+    if (top.video) { try { top.video.currentTime = 0; } catch (e) {} }
+    update();
+  }
+
+  // Forward: the top card slides out left, then goes under the bottom while
+  // the rest move up. Back: the bottom card comes in from the left on top.
+  function go(dir) {
+    if (busy || cards.length < 2) return;
+    busy = true;
+    clearTimeout(timer);
+    var out = reduceMotion ? 0 : OUT_MS;
+    if (dir > 0) {
+      var top = cards.shift();
+      cards.push(top);
+      if (top.video) top.video.pause();
+      cards.forEach(function (c, i) { if (c !== top) place(c, i); });
+      top.el.classList.add("is-out");
+      top.el.style.zIndex = String(cards.length + 1);
+      top.el.style.transform = OUT;
+      setTimeout(function () {
+        top.el.classList.remove("is-out");
+        busy = false;
+        layout();
+      }, out);
+    } else {
+      var back = cards.pop();
+      cards.unshift(back);
+      back.el.classList.add("is-out");
+      back.el.style.transition = "none";
+      back.el.style.zIndex = String(cards.length + 1);
+      back.el.style.transform = OUT;
+      back.el.style.opacity = "";
+      void back.el.offsetWidth;
+      back.el.style.transition = "";
+      back.el.classList.remove("is-out");
+      layout();
+      setTimeout(function () { busy = false; }, out);
+    }
+  }
+  function goTo(card) {
+    var steps = cards.indexOf(card);
+    if (steps <= 0) return;
+    // Jumping by a dot: rotate straight to it, no card-by-card shuffle.
+    cards = cards.slice(steps).concat(cards.slice(0, steps));
+    cards.forEach(function (c) { if (c.video) c.video.pause(); });
+    layout();
   }
 
   function fetchLines(name) {
@@ -773,15 +904,32 @@
         var k = l.indexOf("=");
         if (k > 0) captions[l.slice(0, k)] = l.slice(k + 1).trim();
       });
-      // Swap the page's own video for the list.
-      videos.forEach(function (v) { v.pause(); if (seen) seen.unobserve(v); });
+
+      // Swap the page's own video for the stack.
+      videos.forEach(function (v) { v.pause(); });
       videos = [];
       while (list.firstChild) list.removeChild(list.firstChild);
-      names.forEach(function (name) { list.appendChild(build(name, captions[name])); });
-      // Each moment has its own caption now, so the section's one goes.
-      var sectionCaption = document.getElementById("moments-caption");
-      if (sectionCaption) sectionCaption.hidden = true;
-      update();
+      list.classList.add("moments-stack");
+      all = names.map(function (name) { return build(name, captions[name]); });
+      cards = all.slice();
+      // Bottom of the stack first, so the top card is last in the DOM too.
+      cards.slice().reverse().forEach(function (c) { list.appendChild(c.el); });
+
+      if (cards.length > 1 && controls && dotWrap) {
+        all.forEach(function (card, i) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.setAttribute("aria-label", "Moment " + (i + 1) + " of " + all.length);
+          b.appendChild(document.createElement("i"));
+          b.addEventListener("click", function () { goTo(card); });
+          dotWrap.appendChild(b);
+          dots.push(b);
+        });
+        document.getElementById("moments-prev").addEventListener("click", function () { go(-1); });
+        document.getElementById("moments-next").addEventListener("click", function () { go(1); });
+        controls.hidden = false;
+      }
+      layout();
     });
 })();
 
