@@ -10,8 +10,36 @@
    settings.txt holds "slide_seconds=<n>", how long each photo shows.
 */
 
-/* Scenes: the page is four full-screen .scene layers (intro, dedication,
-   slideshow, moments) and scrolling fades between them instead of moving
+/* How long one run through a GIF takes, in ms, from its bytes: the sum of
+   its frames' delays (in 1/100 s; browsers play 0 or 1 as 10). 0 if it
+   can't be read. gifLength(src) fetches the file first. */
+function gifRunMs(b) {
+  var i = 13, total = 0;
+  function skipBlocks() { while (i < b.length && b[i]) i += b[i] + 1; i++; }
+  if (b.length < 13 || b[0] !== 0x47) return 0; // "GIF"
+  if (b[10] & 0x80) i += 3 << ((b[10] & 7) + 1);
+  while (i < b.length) {
+    if (b[i] === 0x21) {
+      if (b[i + 1] === 0xF9) { var d = b[i + 4] | (b[i + 5] << 8); total += d < 2 ? 10 : d; }
+      i += 2;
+      skipBlocks();
+    } else if (b[i] === 0x2C) {
+      var packed = b[i + 9];
+      i += 10;
+      if (packed & 0x80) i += 3 << ((packed & 7) + 1);
+      i++; // LZW code size
+      skipBlocks();
+    } else break;
+  }
+  return total * 10;
+}
+function gifLength(src) {
+  return fetch(src).then(function (r) { return r.arrayBuffer(); })
+    .then(function (buf) { return gifRunMs(new Uint8Array(buf)); }, function () { return 0; });
+}
+
+/* Scenes: the page is full-screen .scene layers (intro, dedication,
+   slideshow, moments, gallery, messages) and scrolling fades between them instead of moving
    the page. A scene taller than the screen scrolls normally inside itself
    and only fades once you're at its top or bottom edge. Wheel, touch swipe,
    keyboard and the nav links all go through go(). .sidenav slides in on
@@ -21,8 +49,10 @@
    show it) uses that clip as the transition whenever you arrive at it, in
    place of the usual cross-fade; input waits until it's done. With
    data-clip-from="<id or data-anchor>", only when arriving from that scene.
-   A GIF clip is preloaded a second in (not on "load", which the gallery and
-   videos hold up for a long time), kept as a blob, and each showing gets
+   media/transitions.txt (set per GIF at /media-admin) fills these in:
+   "<from>><to>=<gif>" lines, e.g. "top>dedication=river.gif", each GIF
+   shown for one run through (its length read from its frame delays).
+   The next scene's GIF clip is preloaded as a blob, and each showing gets
    its own blob: URL. Every <img> of one GIF URL shares a single animation
    clock, so reusing the URL (it may be animating in Moments too) would start
    it mid-loop; until the blob is in, a cache-busting ?t= does the same job.
@@ -111,7 +141,7 @@
       if (isVideo) { media.muted = true; media.playsInline = true; media.autoplay = true; }
       else media.alt = "";
       if (clipUrl) URL.revokeObjectURL(clipUrl);
-      clipUrl = clipBlobs[src] ? URL.createObjectURL(clipBlobs[src]) : null;
+      clipUrl = clipBlobs[src] instanceof Blob ? URL.createObjectURL(clipBlobs[src]) : null;
       media.src = clipUrl || (isVideo ? src : src + (src.indexOf("?") < 0 ? "?" : "&") + "t=" + Date.now());
       clip.textContent = "";
       clip.appendChild(media);
@@ -123,17 +153,41 @@
     clipTimers.push(setTimeout(stopClip, sceneIn + SCENE_IN_MS));
   }
 
-  var clipBlobs = {}; // GIF clip path -> its Blob, once preloaded
+  var clipBlobs = {}; // GIF clip path -> its Blob (or the pending fetch)
   var clipUrl = null; // the blob: URL on screen, revoked when it's done
-  setTimeout(function () {
-    if (reduceMotion) return;
-    list.forEach(function (sc) {
-      var src = sc.getAttribute("data-clip");
-      if (!src || /\.(mp4|webm|mov|m4v)$/i.test(src)) return;
-      fetch(src).then(function (r) { return r.ok ? r.blob() : null; })
-        .then(function (b) { if (b) clipBlobs[src] = b; }, function () {});
+  // Fetch a scene's GIF clip ahead of time, and time it from its frames
+  // unless the scene sets data-clip-ms itself.
+  function preloadClip(scene) {
+    var src = scene && scene.getAttribute("data-clip");
+    if (!src || reduceMotion || /\.(mp4|webm|mov|m4v)$/i.test(src) || clipBlobs[src]) return;
+    clipBlobs[src] = "loading";
+    fetch(src).then(function (r) { return r.ok ? r.blob() : null; }).then(function (b) {
+      if (!b) { delete clipBlobs[src]; return; }
+      clipBlobs[src] = b;
+      if (!scene.hasAttribute("data-clip-ms")) {
+        new Response(b).arrayBuffer().then(function (buf) {
+          var ms = gifRunMs(new Uint8Array(buf));
+          if (ms && scene.getAttribute("data-clip") === src) scene.setAttribute("data-clip-ms", ms);
+        });
+      }
+    }, function () { delete clipBlobs[src]; });
+  }
+
+  // The GIF transitions chosen at /media-admin.
+  fetch("media/transitions.txt", { cache: "no-cache" })
+    .then(function (r) { return r.ok ? r.text() : ""; }, function () { return ""; })
+    .then(function (t) {
+      t.split("\n").forEach(function (l) {
+        var m = /^\s*([\w-]+)>([\w-]+)\s*=\s*(.+?)\s*$/.exec(l);
+        if (!m) return;
+        var to = list.filter(function (sc) { return (sc.getAttribute("data-anchor") || sc.id) === m[2]; })[0];
+        if (!to) return;
+        to.setAttribute("data-clip", "media/" + encodeURIComponent(m[3]));
+        to.setAttribute("data-clip-from", m[1]);
+        to.removeAttribute("data-clip-ms");
+      });
+      preloadClip(list[current + 1]);
     });
-  }, 1000);
 
   function activate(i, dir, instant) {
     var from = list[current];
@@ -162,6 +216,8 @@
 
     var anchor = to.getAttribute("data-anchor");
     try { history.replaceState(null, "", anchor ? "#" + anchor : location.pathname + location.search); } catch (e) {}
+
+    preloadClip(list[i + 1]);
 
     // Moments plays its videos only while their scene is up.
     document.dispatchEvent(new CustomEvent("scenechange"));
@@ -877,30 +933,6 @@ function windowDots(wrap, dots, current) {
       v.addEventListener("ended", function () { if (topCard() === card) stack.go(1); });
     }
     return card;
-  }
-
-  // How long one run through a GIF takes, in ms: the sum of its frames'
-  // delays (in 1/100 s; browsers play 0 or 1 as 10). 0 if it can't be read.
-  function gifLength(src) {
-    return fetch(src).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
-      var b = new Uint8Array(buf), i = 13, total = 0;
-      function skipBlocks() { while (i < b.length && b[i]) i += b[i] + 1; i++; }
-      if (b[10] & 0x80) i += 3 << ((b[10] & 7) + 1);
-      while (i < b.length) {
-        if (b[i] === 0x21) {
-          if (b[i + 1] === 0xF9) { var d = b[i + 4] | (b[i + 5] << 8); total += d < 2 ? 10 : d; }
-          i += 2;
-          skipBlocks();
-        } else if (b[i] === 0x2C) {
-          var packed = b[i + 9];
-          i += 10;
-          if (packed & 0x80) i += 3 << ((packed & 7) + 1);
-          i++; // LZW code size
-          skipBlocks();
-        } else break;
-      }
-      return total * 10;
-    }).catch(function () { return 0; });
   }
 
   // Card i has come to the top: only its video has controls (and loops, if

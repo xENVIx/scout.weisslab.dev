@@ -8,7 +8,10 @@
    page reads (one filename per line): not_in_gallery.txt names images left
    out of the gallery (every image is in it unless listed), slideshow.txt names files in
    the slideshow (nothing is unless listed). GIFs and videos get a third,
-   moments.txt, the ones shown in the Moments section. memorial.txt is the Memorial
+   moments.txt, the ones shown in the Moments section. A GIF can also be
+   picked as the transition between two sections, one GIF per transition:
+   transitions.txt, "<from>><to>=<file>" lines (script.js reads it).
+   memorial.txt is the Memorial
    section's text, edited in a box at the bottom of the page (paragraphs
    separated by blank lines). captions.txt holds each file's optional
    caption ("<file>=<caption>"), and order.txt the display order the owner
@@ -51,6 +54,17 @@ var GALLERY_OUT_LIST = "not_in_gallery.txt";
 var SLIDES_LIST = "slideshow.txt";
 var MOMENTS_LIST = "moments.txt";
 var MOMENT_EXT = /\.(gif|mp4|webm|mov|m4v)$/i;
+var TRANSITIONS_FILE = "transitions.txt";
+// The page's sections in order, by their data-anchor (the intro's id is
+// "top"); a transition plays on the way down from one to the next. Add
+// ["gallery>messages", "Gallery → Messages"] if the Messages section comes
+// back (it's commented out in index.html).
+var TRANSITIONS = [
+  ["top>dedication", "First page → Memorial"],
+  ["dedication>slideshow", "Memorial → Slideshow"],
+  ["slideshow>moments", "Slideshow → Moments"],
+  ["moments>gallery", "Moments → Gallery"]
+];
 var CAPTIONS_FILE = "captions.txt";
 var ORDER_LIST = "order.txt";
 var MAX_CAPTION = 200; // characters
@@ -58,7 +72,7 @@ var SETTINGS_FILE = "settings.txt";
 var DEFAULT_SLIDE_SECONDS = 5; // script.js uses the same default
 var MAX_SLIDE_SECONDS = 120;
 // Kept in media/ for the page to read, but not media themselves.
-var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, MOMENTS_LIST, PAGE_LIST, MEMORIAL_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
+var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, MOMENTS_LIST, TRANSITIONS_FILE, PAGE_LIST, MEMORIAL_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
 
 // ---- names and paths ----
 
@@ -140,6 +154,20 @@ function slideSeconds() {
   return n;
 }
 
+// { "<from>><to>": file } for the transitions that have a GIF.
+function readTransitions() {
+  var t = {};
+  readList(TRANSITIONS_FILE).forEach(function (l) {
+    var i = l.indexOf("=");
+    if (i > 0) t[l.slice(0, i).trim()] = l.slice(i + 1).trim();
+  });
+  return t;
+}
+function writeTransitions(t) {
+  writeFile(TRANSITIONS_FILE, TRANSITIONS.filter(function (tr) { return t[tr[0]]; })
+    .map(function (tr) { return tr[0] + "=" + t[tr[0]] + "\n"; }).join(""));
+}
+
 function writeCaptions(caps) {
   writeFile(CAPTIONS_FILE, Object.keys(caps).filter(function (f) { return caps[f]; }).sort(naturalCompare)
     .map(function (f) { return f + "=" + caps[f] + "\n"; }).join(""));
@@ -190,6 +218,13 @@ function forgetFile(file, renamedTo) {
     else order.splice(at, 1);
     writeList(ORDER_LIST, order);
   }
+  var trans = readTransitions(), moved = false;
+  Object.keys(trans).forEach(function (k) {
+    if (trans[k] !== file) return;
+    if (renamedTo) trans[k] = renamedTo; else delete trans[k];
+    moved = true;
+  });
+  if (moved) writeTransitions(trans);
   var caps = readCaptions();
   if (caps[file] !== undefined) {
     if (renamedTo) caps[renamedTo] = caps[file];
@@ -390,6 +425,20 @@ function action(req, res) {
       } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
       return json(res, 200, { ok: true });
     }
+    // A GIF's transition ("" for none); one GIF per transition.
+    if (f.action === "transition") {
+      if (!exists || !GIF_EXT.test(f.file)) return json(res, 400, { error: "That GIF is gone." });
+      var key = String(f.transition || "");
+      if (key && !TRANSITIONS.some(function (tr) { return tr[0] === key; })) return json(res, 400, { error: "No such transition." });
+      try {
+        var trans = readTransitions();
+        if (key && trans[key] && trans[key] !== f.file) return json(res, 409, { error: "Another GIF has that one." });
+        Object.keys(trans).forEach(function (k) { if (trans[k] === f.file) delete trans[k]; });
+        if (key) trans[key] = f.file;
+        writeTransitions(trans);
+      } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
+      return json(res, 200, { ok: true });
+    }
     // The whole display order, one filename per line, after a drag.
     if (f.action === "order") {
       var names = String(f.order || "").split("\n").filter(function (n) { return validFile(n) && fs.existsSync(filePath(n)); });
@@ -433,6 +482,7 @@ function adminPage(req, res, query) {
   var galleryOut = readList(GALLERY_OUT_LIST);
   var slidesList = readList(SLIDES_LIST);
   var momentsList = readList(MOMENTS_LIST);
+  var transitions = readTransitions();
   var captions = readCaptions();
   var memorial = "";
   try { memorial = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8").trim(); } catch (e) { if (e.code !== "ENOENT") throw e; }
@@ -450,6 +500,7 @@ function adminPage(req, res, query) {
       '<div class="info"><div class="name">' + esc(f.name) + '</div><div class="meta">' + fmtSize(f.size) +
       ' · <span class="where"></span>' + (inUse ? ' · <b>' + esc(inUse) + '</b>' : '') + '</div>' +
       flagBoxes(f.name, galleryOut.indexOf(f.name) < 0, slidesList.indexOf(f.name) >= 0, momentsList.indexOf(f.name) >= 0) +
+      (GIF_EXT.test(f.name) ? transitionPicker(f.name, transitions) : '') +
       '<div class="row"><input class="caption" value="' + esc(captions[f.name] || "") + '" maxlength="' + MAX_CAPTION + '" placeholder="Caption (optional)" aria-label="Caption for ' + esc(f.name) + '"></div>' +
       '<form method="post" class="row">' + hidden + '<input type="hidden" name="action" value="rename">' +
       '<input name="to" value="' + esc(f.name) + '" aria-label="New name"><button>Rename</button></form>' +
@@ -471,7 +522,7 @@ function adminPage(req, res, query) {
   };
   var toggle = files.length ? '<div class="view">' + viewLink("type", "By type") + viewLink("order", "Display order") + '</div>' : '';
 
-  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> (photos) puts it in the slideshow; <b>Moments</b> (GIFs and videos) puts it in the Moments section, a stack that moves on by itself: a video after it plays once, a GIF after four plays. New uploads are in the gallery but not the slideshow, and go at the end. ' +
+  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> (photos) puts it in the slideshow; <b>Moments</b> (GIFs and videos) puts it in the Moments section, a stack that moves on by itself: a video after it plays once, a GIF after four plays. A GIF\'s <b>Transition</b> plays it once between two sections on the way down the page; each transition can have one GIF, and one already taken is greyed out. New uploads are in the gallery but not the slideshow, and go at the end. ' +
     'To change the order, switch to <b>Display order</b> and drag a file by its ⠿ handle. A caption shows under the photo in the slideshow and the enlarged view.</p>';
 
   var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -489,6 +540,9 @@ function adminPage(req, res, query) {
     '.thumb img,.thumb video{width:100%;height:100%;object-fit:cover}.nothumb{font:13px system-ui;color:#6B5748}' +
     '.info{flex:1;min-width:0}.name{font:600 15px system-ui,sans-serif;word-break:break-all}.meta{font:13px system-ui,sans-serif;color:#6B5748;margin-bottom:8px}' +
     '.flags{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;font:14px system-ui,sans-serif;margin-bottom:10px}' +
+    '.transition{align-items:center;font:14px system-ui,sans-serif}.transition label{display:flex;gap:8px;align-items:center}' +
+    '.transition select{font:14px system-ui,sans-serif;padding:6px 8px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;color:#2B211B}' +
+    '.transition option:disabled{color:#b5a593}' +
     '.flags label{display:flex;gap:6px;align-items:center;cursor:pointer}.flags input{width:17px;height:17px;padding:0;margin:0;accent-color:#A8571F}' +
     '.saved{font-size:12px;color:#6B5748}.saved.err{color:#9b2c2c}' +
     'h3{font:600 15px system-ui,sans-serif;margin:26px 0 6px;color:#4A3B31}' +
@@ -533,6 +587,19 @@ function adminPage(req, res, query) {
   var headers = { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" };
   if (cookie) headers["Set-Cookie"] = cookie;
   send(res, 200, html, headers);
+}
+
+// A GIF's "Transition" menu: None, or a transition between sections. Ones
+// another GIF has are greyed out (adminClient keeps that up to date).
+function transitionPicker(file, transitions) {
+  var mine = "";
+  Object.keys(transitions).forEach(function (k) { if (transitions[k] === file) mine = k; });
+  return '<div class="row transition" data-file="' + esc(file) + '"><label>Transition ' +
+    '<select class="transition-pick" aria-label="Transition for ' + esc(file) + '"><option value="">None</option>' +
+    TRANSITIONS.map(function (tr) {
+      var taken = transitions[tr[0]] && transitions[tr[0]] !== file;
+      return '<option value="' + tr[0] + '"' + (tr[0] === mine ? ' selected' : '') + (taken ? ' disabled' : '') + '>' + esc(tr[1]) + '</option>';
+    }).join("") + '</select></label><span class="saved" aria-live="polite"></span></div>';
 }
 
 function flagBoxes(file, gallery, slides, moments) {
@@ -586,6 +653,27 @@ function adminClient() {
     if (slides) slides.addEventListener("change", save);
     if (moments) moments.addEventListener("change", save);
   });
+  // Transitions: one GIF each, so a choice greys that transition out in
+  // every other GIF's menu (and frees up the one it had).
+  var picks = Array.prototype.slice.call(document.querySelectorAll(".transition-pick"));
+  function greyOut() {
+    var taken = {};
+    picks.forEach(function (p) { if (p.value) taken[p.value] = p; });
+    picks.forEach(function (p) {
+      Array.prototype.forEach.call(p.options, function (o) { o.disabled = !!o.value && !!taken[o.value] && taken[o.value] !== p; });
+    });
+  }
+  picks.forEach(function (p) {
+    var before = p.value;
+    p.addEventListener("change", function () {
+      var note = p.closest(".transition").querySelector(".saved");
+      greyOut();
+      var req = post({ action: "transition", file: p.closest(".transition").getAttribute("data-file"), transition: p.value });
+      report(note, req);
+      req.then(function () { before = p.value; }, function () { p.value = before; greyOut(); });
+    });
+  });
+
   // Captions save when you leave the box (or press Enter).
   document.querySelectorAll("input.caption").forEach(function (input) {
     var file = input.closest(".file").getAttribute("data-file");
