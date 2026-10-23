@@ -1009,13 +1009,17 @@ function windowDots(wrap, dots, current) {
 
 /* The intro photo and the catch video are named in media/page_files.txt
    ("intro=<file>", "catch=<file>"), which /media-admin updates when either
-   is renamed. index.html carries the names they had when it was written, so
-   usually nothing changes here; after a rename this swaps the new name in.
+   is renamed, or when another title page photo is picked there. index.html
+   carries the names they had when it was written; when the file names
+   another, this swaps it in. The intro photo stays hidden (.is-ready, in
+   style.css) until that's settled, so the old one never flashes up first.
    (Once Moments, above, has built its list, #frisbee is gone.) */
 (function pageFiles() {
   var hero = document.querySelector("#top .frame img");
   var v = document.getElementById("frisbee");
   var shell = document.getElementById("video-shell");
+  function showHero() { if (hero) hero.classList.add("is-ready"); }
+  setTimeout(showHero, 3000); // whatever happens, never leave it hidden
   function differs(el, name) {
     var src = el.getAttribute("src");
     return src !== "media/" + name && src !== "media/" + encodeURIComponent(name);
@@ -1028,7 +1032,11 @@ function windowDots(wrap, dots, current) {
         var m = /^\s*(\w+)\s*=\s*(.+?)\s*$/.exec(l);
         if (m) names[m[1]] = m[2];
       });
-      if (hero && names.intro && differs(hero, names.intro)) hero.src = "media/" + encodeURIComponent(names.intro);
+      if (hero && names.intro && differs(hero, names.intro)) {
+        hero.addEventListener("load", showHero);
+        hero.addEventListener("error", showHero);
+        hero.src = "media/" + encodeURIComponent(names.intro);
+      } else showHero();
       if (v && shell && document.contains(v) && names["catch"] && differs(v, names["catch"])) {
         shell.classList.remove("is-empty");
         v.setAttribute("controls", "");
@@ -1036,7 +1044,7 @@ function windowDots(wrap, dots, current) {
         if (v.closest(".scene.is-active")) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
       }
     })
-    .catch(function () {});
+    .catch(showHero);
 })();
 
 /* The Memorial section's text lives in media/memorial.txt (edited at

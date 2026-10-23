@@ -43,6 +43,7 @@ var LOGIN_WINDOW_MS = 15 * 60e3;      // ...per 15 minutes
 var MEDIA_EXT = /\.(jpe?g|png|gif|webp|avif|mp4|webm|mov|m4v)$/i;
 var VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i;
 var GIF_EXT = /\.gif$/i;
+var PHOTO_EXT = /\.(jpe?g|png|webp|avif)$/i; // still photos, for the title page
 // How the file list is grouped on the admin page, in this order.
 var KINDS = [["image", "Images"], ["gif", "GIFs"], ["video", "Videos"], ["other", "Other files"]];
 // The files the page uses directly live in PAGE_LIST, by role; deleting one
@@ -194,6 +195,12 @@ function pageFiles() {
 function pageUse(file) {
   var roles = pageFiles();
   return Object.keys(roles).filter(function (r) { return roles[r] === file; }).map(function (r) { return ROLES[r]; }).join(" and ");
+}
+
+function setPageFile(role, file) {
+  var roles = pageFiles();
+  roles[role] = file;
+  writeFile(PAGE_LIST, Object.keys(roles).map(function (r) { return r + "=" + roles[r] + "\n"; }).join(""));
 }
 
 function renamePageFile(file, to) {
@@ -425,6 +432,13 @@ function action(req, res) {
       } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
       return json(res, 200, { ok: true });
     }
+    // The title page photo (saves in the background, like the checkboxes).
+    if (f.action === "intro") {
+      if (!PHOTO_EXT.test(f.file || "")) return json(res, 400, { error: "Pick a photo, not a GIF or video." });
+      if (!exists) return json(res, 400, { error: "That photo is gone." });
+      try { setPageFile("intro", f.file); } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
+      return json(res, 200, { ok: true });
+    }
     // A GIF's transition ("" for none); one GIF per transition.
     if (f.action === "transition") {
       if (!exists || !GIF_EXT.test(f.file)) return json(res, 400, { error: "That GIF is gone." });
@@ -483,6 +497,8 @@ function adminPage(req, res, query) {
   var slidesList = readList(SLIDES_LIST);
   var momentsList = readList(MOMENTS_LIST);
   var transitions = readTransitions();
+  var intro = pageFiles().intro || "";
+  var photos = files.map(function (f) { return f.name; }).filter(function (n) { return PHOTO_EXT.test(n); });
   var captions = readCaptions();
   var memorial = "";
   try { memorial = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8").trim(); } catch (e) { if (e.code !== "ENOENT") throw e; }
@@ -543,6 +559,9 @@ function adminPage(req, res, query) {
     '.transition{align-items:center;font:14px system-ui,sans-serif}.transition label{display:flex;gap:8px;align-items:center}' +
     '.transition select{font:14px system-ui,sans-serif;padding:6px 8px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;color:#2B211B}' +
     '.transition option:disabled{color:#b5a593}' +
+    '.intro-pick{display:flex;gap:18px;align-items:flex-start;font:14px system-ui,sans-serif}.intro-pick label{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
+    '.intro-pick select{font:14px system-ui,sans-serif;padding:6px 8px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;color:#2B211B;max-width:100%}' +
+    '#intro-preview{flex:none;width:96px;aspect-ratio:499/934;object-fit:cover;border-radius:3px;border:1px solid #E5D6C0;background:#F1E6D4}' +
     '.flags label{display:flex;gap:6px;align-items:center;cursor:pointer}.flags input{width:17px;height:17px;padding:0;margin:0;accent-color:#A8571F}' +
     '.saved{font-size:12px;color:#6B5748}.saved.err{color:#9b2c2c}' +
     'h3{font:600 15px system-ui,sans-serif;margin:26px 0 6px;color:#4A3B31}' +
@@ -565,7 +584,7 @@ function adminPage(req, res, query) {
     '.settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:15px system-ui,sans-serif}.settings input{width:80px;margin-left:8px}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
     '</style></head><body><main><form method="post" action="/media-admin/logout" class="out"><button>Sign out</button></form><h1>Scout’s media</h1>' +
-    '<p class="jump"><a href="#slideshow">Slideshow timing ↓</a> · <a href="#memorial">Edit the memorial text ↓</a></p>' +
+    '<p class="jump"><a href="#title-photo">Title page photo ↓</a> · <a href="#slideshow">Slideshow timing ↓</a> · <a href="#memorial">Edit the memorial text ↓</a></p>' +
     (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') +
     '<h2>Upload</h2>' +
     '<label class="drop" id="drop">Drop photos or videos here, or click to choose' +
@@ -573,6 +592,13 @@ function adminPage(req, res, query) {
     note +
     '<div class="listhead"><h2>All media (' + files.length + ')</h2>' + toggle + '</div>' +
     (view === "order" && files.length > 1 ? '<p class="order-note" id="order-note" aria-live="polite"></p>' : '') + rows +
+    '<h2 id="title-photo">Title page photo</h2>' +
+    '<div class="intro-pick"><img id="intro-preview" src="' + (intro ? esc("/media/" + encodeURIComponent(intro)) : '') + '" alt=""' + (intro ? '' : ' hidden') + '>' +
+    '<div><label>The big photo on the first page <select id="intro-select" aria-label="Title page photo">' +
+    (intro && photos.indexOf(intro) < 0 ? '<option value="" selected>(missing: ' + esc(intro) + ')</option>' : '') +
+    photos.map(function (n) { return '<option value="' + esc(n) + '"' + (n === intro ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join("") +
+    '</select></label> <span class="saved" id="intro-saved" aria-live="polite"></span>' +
+    '<p class="hint">It fills a tall frame, so the sides of a wide photo are cropped off; the preview shows how it will look.</p></div></div>' +
     '<h2 id="slideshow">Slideshow</h2>' +
     '<form method="post" class="settings"><input type="hidden" name="action" value="settings">' +
     '<label>Seconds each photo shows <input type="number" name="slide_seconds" min="1" max="' + MAX_SLIDE_SECONDS + '" step="0.5" value="' + esc(slideSeconds()) + '" required></label> ' +
@@ -673,6 +699,22 @@ function adminClient() {
       req.then(function () { before = p.value; }, function () { p.value = before; greyOut(); });
     });
   });
+
+  // The title page photo saves as soon as it's picked; the preview follows.
+  var introSelect = document.getElementById("intro-select");
+  if (introSelect) {
+    var introBefore = introSelect.value;
+    introSelect.addEventListener("change", function () {
+      var preview = document.getElementById("intro-preview");
+      var req = post({ action: "intro", file: introSelect.value });
+      report(document.getElementById("intro-saved"), req);
+      req.then(function () {
+        introBefore = introSelect.value;
+        preview.src = "/media/" + encodeURIComponent(introSelect.value);
+        preview.hidden = false;
+      }, function () { introSelect.value = introBefore; });
+    });
+  }
 
   // Captions save when you leave the box (or press Enter).
   document.querySelectorAll("input.caption").forEach(function (input) {

@@ -175,6 +175,9 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
   aspect-ratio: 499 / 934; object-fit: cover; object-position: center center;
   background-color: var(--paper); border-radius: 3px;
 }
+/* Hidden until script.js knows which photo it is (media/page_files.txt). */
+.scenes #top .frame img { opacity: 0; transition: opacity 500ms ease; }
+.scenes #top .frame img.is-ready { opacity: 1; }
 
 .hairline { height: 1px; background: linear-gradient(90deg, rgba(217,196,166,0) 0%, #D9C4A6 50%, rgba(217,196,166,0) 100%); }
 
