@@ -21,7 +21,11 @@
    show it) uses that clip as the transition whenever you arrive at it, in
    place of the usual cross-fade; input waits until it's done. With
    data-clip-from="<id or data-anchor>", only when arriving from that scene.
-   Clips are preloaded once the page has loaded, so they're ready in time.
+   A GIF clip is preloaded a second in (not on "load", which the gallery and
+   videos hold up for a long time), kept as a blob, and each showing gets
+   its own blob: URL. Every <img> of one GIF URL shares a single animation
+   clock, so reusing the URL (it may be animating in Moments too) would start
+   it mid-loop; until the blob is in, a cache-busting ?t= does the same job.
 
    .scene-dots, down the right edge, has one dot per scene: it shows where
    you are and jumps to a scene when clicked. */
@@ -106,7 +110,9 @@
       var media = document.createElement(isVideo ? "video" : "img");
       if (isVideo) { media.muted = true; media.playsInline = true; media.autoplay = true; }
       else media.alt = "";
-      media.src = src;
+      if (clipUrl) URL.revokeObjectURL(clipUrl);
+      clipUrl = clipBlobs[src] ? URL.createObjectURL(clipBlobs[src]) : null;
+      media.src = clipUrl || (isVideo ? src : src + (src.indexOf("?") < 0 ? "?" : "&") + "t=" + Date.now());
       clip.textContent = "";
       clip.appendChild(media);
       void clip.offsetWidth;
@@ -117,13 +123,17 @@
     clipTimers.push(setTimeout(stopClip, sceneIn + SCENE_IN_MS));
   }
 
-  window.addEventListener("load", function () {
+  var clipBlobs = {}; // GIF clip path -> its Blob, once preloaded
+  var clipUrl = null; // the blob: URL on screen, revoked when it's done
+  setTimeout(function () {
     if (reduceMotion) return;
     list.forEach(function (sc) {
       var src = sc.getAttribute("data-clip");
-      if (src && !/\.(mp4|webm|mov|m4v)$/i.test(src)) new Image().src = src;
+      if (!src || /\.(mp4|webm|mov|m4v)$/i.test(src)) return;
+      fetch(src).then(function (r) { return r.ok ? r.blob() : null; })
+        .then(function (b) { if (b) clipBlobs[src] = b; }, function () {});
     });
-  });
+  }, 1000);
 
   function activate(i, dir, instant) {
     var from = list[current];
