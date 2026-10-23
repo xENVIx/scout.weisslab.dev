@@ -655,8 +655,12 @@
   var shell = document.getElementById("video-shell");
   if (!v || !shell) return;
   function empty() { shell.classList.add("is-empty"); v.removeAttribute("controls"); }
+  function loaded() { shell.classList.remove("is-empty"); v.setAttribute("controls", ""); }
   v.addEventListener("error", empty);
-  if (v.networkState === 3) empty();
+  // Only a real error counts: networkState reads NO_SOURCE for a moment
+  // before the browser starts loading, which used to hide a working video.
+  if (v.error) empty();
+  v.addEventListener("loadeddata", loaded);
 
   // It plays muted (browsers only autoplay silent video); this button turns
   // the sound on and off, and follows the player's own mute control too.
