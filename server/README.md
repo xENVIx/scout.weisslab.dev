@@ -2,18 +2,23 @@
 
 `messages.js` is a dependency-free Node server on `127.0.0.1:3311`:
 
-- `GET /api/messages` returns approved messages, newest first.
-- `POST /api/messages` (`{"text": "..."}`) stores a pending message, with a honeypot field and a limit of 5 per IP per hour.
-- `/messages-admin` is the approval page, behind HTTP basic auth with `ADMIN_PASSWORD` (any username).
+- `GET /api/messages` returns approved messages, newest first (with `photo`, a URL, when there is one).
+- `POST /api/messages` (`{"text": "...", "photo": "data:image/...;base64,..."}`, either or both) stores a pending message, with a honeypot field and a limit of 5 per IP per hour. The page shrinks a photo to 2400 px and re-saves it as a JPEG first (GIFs go as they are); the server takes JPEG, PNG, GIF or WebP (checked by their first bytes), 8 MB max.
+- `GET /api/messages/photo/<id>` serves a photo once its message is approved; `/messages-admin/photo/<id>` serves it to the admin any time.
+- `/messages-admin` is the approval page, behind HTTP basic auth with `ADMIN_PASSWORD` (any username). Each message can be approved, hidden or deleted, and one with a photo can have just the photo removed, or copied into `media/` ("Copy to my media", with Gallery / Slideshow, or Moments for a GIF, and optionally its text as the caption).
 
-Messages are stored in `/var/lib/scout-messages/messages.json`, outside the web root.
+Messages are stored in `/var/lib/scout-messages/messages.json`, outside the web root, with their photos in `/var/lib/scout-messages/photos/`. (systemd's `DynamicUser` puts them under `/var/lib/private/scout-messages/`.)
+
+Copying a photo into `media/` goes through the media manager, since only it can write there: `messages.js` POSTs the file to `http://127.0.0.1:3312/internal/import` with an `X-Import-Token` header. Both env files hold the same `IMPORT_TOKEN`; the media manager refuses the request without it, or if it came through nginx (which never proxies `/internal/` anyway).
 
 ## Install (run as root)
 
 ```sh
 cp server/scout-messages.service /etc/systemd/system/
-( umask 077; printf 'ADMIN_PASSWORD=%s\n' "$(openssl rand -base64 15)" > /etc/scout-messages.env )
-systemctl daemon-reload && systemctl enable --now scout-messages
+TOKEN=$(openssl rand -hex 24)
+( umask 077; printf 'ADMIN_PASSWORD=%s\nIMPORT_TOKEN=%s\n' "$(openssl rand -base64 15)" "$TOKEN" > /etc/scout-messages.env )
+printf 'IMPORT_TOKEN=%s\n' "$TOKEN" >> /etc/scout-media.env   # same token, for copying photos into media/
+systemctl daemon-reload && systemctl enable --now scout-messages && systemctl restart scout-media
 cat /etc/scout-messages.env   # the admin password
 ```
 

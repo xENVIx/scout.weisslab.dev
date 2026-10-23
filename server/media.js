@@ -17,6 +17,9 @@
    caption ("<file>=<caption>"), and order.txt the display order the owner
    set by dragging (files it doesn't name follow, by filename). settings.txt
    holds "slide_seconds=<n>", how long each photo shows in the slideshow.
+   /internal/import takes a visitor's photo from the messages server
+   (server/messages.js), straight from 127.0.0.1 with IMPORT_TOKEN; nginx
+   never passes that path on, and anything it does pass carries X-Real-IP.
    page_files.txt names the files
    index.html uses directly ("intro=<file>", "catch=<file>"); renaming one
    here updates it, and script.js picks up the new name. nginx proxies /media-admin here;
@@ -32,6 +35,7 @@ var crypto = require("crypto");
 var PORT = Number(process.env.PORT) || 3312;
 var HOST = "127.0.0.1";
 var ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+var IMPORT_TOKEN = process.env.IMPORT_TOKEN || "";
 var MEDIA_ROOT = process.env.MEDIA_ROOT || path.join(__dirname, "..", "media");
 
 var MAX_UPLOAD = 1024 * 1024 * 1024; // 1 GB per file
@@ -57,14 +61,13 @@ var MOMENTS_LIST = "moments.txt";
 var MOMENT_EXT = /\.(gif|mp4|webm|mov|m4v)$/i;
 var TRANSITIONS_FILE = "transitions.txt";
 // The page's sections in order, by their data-anchor (the intro's id is
-// "top"); a transition plays on the way down from one to the next. Add
-// ["gallery>messages", "Gallery → Messages"] if the Messages section comes
-// back (it's commented out in index.html).
+// "top"); a transition plays between one and the next, either way.
 var TRANSITIONS = [
-  ["top>dedication", "First page → Memorial"],
-  ["dedication>slideshow", "Memorial → Slideshow"],
-  ["slideshow>moments", "Slideshow → Moments"],
-  ["moments>gallery", "Moments → Gallery"]
+  ["top>dedication", "First page ↔ Memorial"],
+  ["dedication>slideshow", "Memorial ↔ Slideshow"],
+  ["slideshow>moments", "Slideshow ↔ Moments"],
+  ["moments>gallery", "Moments ↔ Gallery"],
+  ["gallery>messages", "Gallery ↔ Messages"]
 ];
 var CAPTIONS_FILE = "captions.txt";
 var ORDER_LIST = "order.txt";
@@ -378,6 +381,34 @@ function upload(req, res, query) {
   req.pipe(out);
 }
 
+// A visitor's photo from the messages server: the file is the raw body, and
+// the query names it and says where it goes (gallery, slideshow, moments,
+// caption). A name that's taken gets -2, -3... added.
+function importFromMessages(req, res, query) {
+  var token = String(req.headers["x-import-token"] || "");
+  if (!IMPORT_TOKEN || req.headers["x-real-ip"] || !crypto.timingSafeEqual(sha(token), sha(IMPORT_TOKEN))) return send(res, 403, "Forbidden");
+  var name = cleanName(query.get("name"));
+  if (!validFile(name) || VIDEO_EXT.test(name)) return json(res, 400, { error: "That isn't a photo." });
+  var base = name.replace(/(\.[^.]+)$/, ""), ext = path.extname(name);
+  for (var n = 2; fs.existsSync(filePath(name)); n++) name = base + "-" + n + ext;
+  var chunks = [], size = 0;
+  req.on("data", function (c) { size += c.length; if (size <= MAX_UPLOAD) chunks.push(c); });
+  req.on("end", function () {
+    if (!size || size > MAX_UPLOAD) return json(res, 400, { error: "That photo is empty or too big." });
+    try {
+      var tmp = filePath("." + name + "." + crypto.randomBytes(4).toString("hex") + ".part");
+      fs.writeFileSync(tmp, Buffer.concat(chunks), { flag: "wx" });
+      fs.renameSync(tmp, filePath(name));
+      setFlag(GALLERY_OUT_LIST, name, query.get("gallery") !== "1");
+      if (MOMENT_EXT.test(name)) setFlag(MOMENTS_LIST, name, query.get("moments") === "1");
+      else setFlag(SLIDES_LIST, name, query.get("slideshow") === "1");
+      var caption = String(query.get("caption") || "").replace(/\s+/g, " ").trim().slice(0, MAX_CAPTION);
+      if (caption) { var caps = readCaptions(); caps[name] = caption; writeCaptions(caps); }
+    } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save the photo." }); }
+    json(res, 201, { ok: true, name: name });
+  });
+}
+
 // ---- actions (form posts) ----
 
 function action(req, res) {
@@ -538,7 +569,7 @@ function adminPage(req, res, query) {
   };
   var toggle = files.length ? '<div class="view">' + viewLink("type", "By type") + viewLink("order", "Display order") + '</div>' : '';
 
-  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> (photos) puts it in the slideshow; <b>Moments</b> (GIFs and videos) puts it in the Moments section, a stack that moves on by itself: a video after it plays once, a GIF after four plays. A GIF\'s <b>Transition</b> plays it once between two sections on the way down the page; each transition can have one GIF, and one already taken is greyed out. New uploads are in the gallery but not the slideshow, and go at the end. ' +
+  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> (photos) puts it in the slideshow; <b>Moments</b> (GIFs and videos) puts it in the Moments section, a stack that moves on by itself: a video after it plays once, a GIF after four plays. A GIF\'s <b>Transition</b> plays it once when moving between two sections (either way, or jumping there with the menu); each transition can have one GIF, and one already taken is greyed out. New uploads are in the gallery but not the slideshow, and go at the end. ' +
     'To change the order, switch to <b>Display order</b> and drag a file by its ⠿ handle. A caption shows under the photo in the slideshow and the enlarged view.</p>';
 
   var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -844,6 +875,7 @@ function adminClient() {
 
 http.createServer(function (req, res) {
   var u = new URL(req.url, "http://x");
+  if (u.pathname === "/internal/import" && req.method === "POST") return importFromMessages(req, res, u.searchParams);
   if (["/media-admin", "/media-admin/upload", "/media-admin/login", "/media-admin/logout"].indexOf(u.pathname) < 0) return send(res, 404, "Not found");
   if (u.pathname === "/media-admin/login" && req.method === "POST") return sameOrigin(req) ? login(req, res) : send(res, 403, "Forbidden");
   if (u.pathname === "/media-admin/logout" && req.method === "POST") {

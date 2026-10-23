@@ -46,13 +46,15 @@ function gifLength(src) {
    every scene after the intro (the intro has .topnav instead).
 
    A scene with data-clip="<gif or video>" (and data-clip-ms, how long to
-   show it) uses that clip as the transition whenever you arrive at it, in
-   place of the usual cross-fade; input waits until it's done. With
-   data-clip-from="<id or data-anchor>", only when arriving from that scene.
+   show it) uses that clip as the transition between it and the scene before
+   it, in place of the usual cross-fade, both ways: arriving from above, and
+   leaving it back up. A jump (nav link, dot) plays the one it would have
+   crossed last, coming the normal way. Input waits until it's done. With
+   data-clip-from="<id or data-anchor>", only when that's the scene before.
    media/transitions.txt (set per GIF at /media-admin) fills these in:
    "<from>><to>=<gif>" lines, e.g. "top>dedication=river.gif", each GIF
    shown for one run through (its length read from its frame delays).
-   The next scene's GIF clip is preloaded as a blob, and each showing gets
+   The clips next to the current scene are preloaded as blobs, and each showing gets
    its own blob: URL. Every <img> of one GIF URL shares a single animation
    clock, so reusing the URL (it may be animating in Moments too) would start
    it mid-loop; until the blob is in, a cache-busting ?t= does the same job.
@@ -117,18 +119,28 @@ function gifLength(src) {
     if (clipScene) { clipScene.style.transitionDelay = ""; clipScene = null; }
   }
 
-  function playClip(scene, from) {
-    var src = scene.getAttribute("data-clip");
-    if (!src || reduceMotion) return;
-    var only = scene.getAttribute("data-clip-from");
-    if (only !== null && only !== (from.getAttribute("data-anchor") || from.id)) return;
+  // The scene carrying the clip between scenes i - 1 and i is list[i].
+  function clipAt(i) {
+    var sc = list[i], only = sc && sc.getAttribute("data-clip-from");
+    if (!sc || i < 1 || !sc.getAttribute("data-clip")) return null;
+    if (only !== null && only !== (list[i - 1].getAttribute("data-anchor") || list[i - 1].id)) return null;
+    return sc;
+  }
+  // Going to scene `to` from scene `from`: down, the boundary just above
+  // `to`; up, the one just below it.
+  function playClip(to, from) {
+    var i = list.indexOf(to), j = list.indexOf(from);
+    var carrier = clipAt(i > j ? i : i + 1);
+    if (!carrier || reduceMotion) return;
+    var scene = to;
+    var src = carrier.getAttribute("data-clip");
     if (!clip) {
       clip = document.createElement("div");
       clip.className = "scene-clip";
       clip.setAttribute("aria-hidden", "true");
       document.body.appendChild(clip);
     }
-    var ms = Number(scene.getAttribute("data-clip-ms")) || 2000;
+    var ms = Number(carrier.getAttribute("data-clip-ms")) || 2000;
     var sceneIn = SCENE_OUT_MS + ms; // when the new scene starts fading in
     clipScene = scene;
     scene.style.transitionDelay = sceneIn + "ms, " + sceneIn + "ms, 0s";
@@ -186,6 +198,7 @@ function gifLength(src) {
         to.setAttribute("data-clip-from", m[1]);
         to.removeAttribute("data-clip-ms");
       });
+      preloadClip(list[current]);
       preloadClip(list[current + 1]);
     });
 
@@ -217,7 +230,8 @@ function gifLength(src) {
     var anchor = to.getAttribute("data-anchor");
     try { history.replaceState(null, "", anchor ? "#" + anchor : location.pathname + location.search); } catch (e) {}
 
-    preloadClip(list[i + 1]);
+    preloadClip(list[i]);     // the clip back up
+    preloadClip(list[i + 1]); // the clip on down
 
     // Moments plays its videos only while their scene is up.
     document.dispatchEvent(new CustomEvent("scenechange"));
@@ -1072,15 +1086,23 @@ function windowDots(wrap, dots, current) {
     .catch(function () {});
 })();
 
-/* Messages: visitors leave a note for Scout. New messages are held until
-   approved at /messages-admin (server/messages.js), so the form only says
-   thanks; the list shows already-approved messages, newest first. */
+/* Messages: visitors leave a note for Scout, a photo, or both. New ones are
+   held until approved at /messages-admin (server/messages.js), so the form
+   only says thanks; the list shows already-approved ones, newest first.
+   A photo is shrunk here before it's sent (at most PHOTO_MAX px a side,
+   re-saved as a JPEG, which also drops its location data); a GIF goes as
+   it is, so it still moves. */
 (function messages() {
   var form = document.getElementById("message-form");
   var list = document.getElementById("message-list");
   var status = document.getElementById("message-status");
   if (!form || !list) return;
   var API = "/api/messages";
+  var PHOTO_MAX = 2400;           // px, longest side
+  var GIF_MAX = 8 * 1024 * 1024;  // bytes, as in server/messages.js
+  var picker = document.getElementById("message-photo");
+  var preview = document.getElementById("photo-preview");
+  var photo = null; // the photo to send, as a data: URL
 
   fetch(API)
     .then(function (r) { return r.ok ? r.json() : []; })
@@ -1088,38 +1110,104 @@ function windowDots(wrap, dots, current) {
       items.forEach(function (m) {
         var div = document.createElement("div");
         div.className = "msg";
-        var p = document.createElement("p");
-        p.textContent = m.text;
+        if (m.text) {
+          var p = document.createElement("p");
+          p.textContent = m.text;
+          div.appendChild(p);
+        }
+        if (m.photo) {
+          var a = document.createElement("a");
+          a.className = "msg-photo";
+          a.href = m.photo;
+          a.target = "_blank";
+          var img = document.createElement("img");
+          img.src = m.photo;
+          img.alt = "A photo of Scout, shared by a visitor";
+          img.loading = "lazy";
+          a.appendChild(img);
+          div.appendChild(a);
+        }
         var t = document.createElement("time");
         t.dateTime = m.createdAt;
         t.textContent = new Date(m.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
-        div.appendChild(p);
         div.appendChild(t);
         list.appendChild(div);
       });
     })
     .catch(function () {});
 
+  // The picked photo, ready to send: a GIF as it is, anything else drawn
+  // onto a canvas no bigger than PHOTO_MAX and saved as a JPEG.
+  function readPhoto(file) {
+    return new Promise(function (resolve, reject) {
+      if (/^image\/gif$/i.test(file.type)) {
+        if (file.size > GIF_MAX) return reject(new Error("That GIF is too big (8 MB max)."));
+        var fr = new FileReader();
+        fr.onload = function () { resolve(fr.result); };
+        fr.onerror = function () { reject(new Error("")); };
+        return fr.readAsDataURL(file);
+      }
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(1, PHOTO_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+        var c = document.createElement("canvas");
+        c.width = Math.round(img.naturalWidth * scale);
+        c.height = Math.round(img.naturalHeight * scale);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL("image/jpeg", 0.86));
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("")); };
+      img.src = url;
+    });
+  }
+  function clearPhoto() {
+    photo = null;
+    if (picker) picker.value = "";
+    if (preview) { preview.hidden = true; preview.querySelector("img").removeAttribute("src"); }
+  }
+  if (picker && preview) {
+    picker.addEventListener("change", function () {
+      var file = picker.files && picker.files[0];
+      if (!file) return clearPhoto();
+      status.textContent = "Getting the photo ready…";
+      readPhoto(file).then(function (data) {
+        photo = data;
+        preview.querySelector("img").src = data;
+        preview.hidden = false;
+        status.textContent = "";
+      }, function (err) {
+        clearPhoto();
+        status.textContent = err.message || "That photo couldn’t be opened. Please try a JPEG or PNG.";
+      });
+    });
+    document.getElementById("photo-remove").addEventListener("click", clearPhoto);
+  }
+
   form.addEventListener("submit", function (e) {
     e.preventDefault();
-    var button = form.querySelector("button");
+    var button = form.querySelector("button[type=submit]");
     var text = form.elements.text.value.trim();
-    if (!text) return;
+    if (!text && !photo) { status.textContent = "Please write a message or add a photo."; return; }
     button.disabled = true;
     status.textContent = "Sending…";
+    var body = { text: text, website: form.elements.website.value };
+    if (photo) body.photo = photo;
     fetch(API, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: text, website: form.elements.website.value })
+      body: JSON.stringify(body)
     })
       .then(function (r) {
-        return r.json().catch(function () { return {}; }).then(function (body) {
-          if (!r.ok) throw new Error(body.error || "");
+        return r.json().catch(function () { return {}; }).then(function (b) {
+          if (!r.ok) throw new Error(b.error || (r.status === 413 ? "That photo is too big. Please try a smaller one." : ""));
         });
       })
       .then(function () {
         form.reset();
-        status.textContent = "Thank you. Your message will appear here once it’s been approved.";
+        clearPhoto();
+        status.textContent = "Thank you. It will appear here once it’s been approved.";
       })
       .catch(function (err) {
         status.textContent = err.message || "Sorry, that didn’t send. Please try again in a moment.";
