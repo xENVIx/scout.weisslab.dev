@@ -19,7 +19,9 @@
 
    A scene with data-clip="<gif or video>" (and data-clip-ms, how long to
    show it) uses that clip as the transition whenever you arrive at it, in
-   place of the usual cross-fade; input waits until it's done.
+   place of the usual cross-fade; input waits until it's done. With
+   data-clip-from="<id or data-anchor>", only when arriving from that scene.
+   Clips are preloaded once the page has loaded, so they're ready in time.
 
    .scene-dots, down the right edge, has one dot per scene: it shows where
    you are and jumps to a scene when clicked. */
@@ -81,9 +83,11 @@
     if (clipScene) { clipScene.style.transitionDelay = ""; clipScene = null; }
   }
 
-  function playClip(scene) {
+  function playClip(scene, from) {
     var src = scene.getAttribute("data-clip");
     if (!src || reduceMotion) return;
+    var only = scene.getAttribute("data-clip-from");
+    if (only !== null && only !== (from.getAttribute("data-anchor") || from.id)) return;
     if (!clip) {
       clip = document.createElement("div");
       clip.className = "scene-clip";
@@ -113,6 +117,14 @@
     clipTimers.push(setTimeout(stopClip, sceneIn + SCENE_IN_MS));
   }
 
+  window.addEventListener("load", function () {
+    if (reduceMotion) return;
+    list.forEach(function (sc) {
+      var src = sc.getAttribute("data-clip");
+      if (src && !/\.(mp4|webm|mov|m4v)$/i.test(src)) new Image().src = src;
+    });
+  });
+
   function activate(i, dir, instant) {
     var from = list[current];
     var to = list[i];
@@ -129,7 +141,7 @@
       setShift(from, dir >= 0 ? -SHIFT : SHIFT);
       from.classList.remove("is-active");
     }
-    if (!instant && from !== to) playClip(to);
+    if (!instant && from !== to) playClip(to, from);
     to.classList.add("is-active");
     if (instant) { void to.offsetWidth; to.style.transition = ""; }
 
