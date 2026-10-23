@@ -2,9 +2,11 @@
 
    Visitors POST a message to /api/messages, with an optional photo; it's
    stored as pending and only shows up in GET /api/messages once approved at
-   /messages-admin (HTTP basic auth, password from ADMIN_PASSWORD). nginx
-   proxies both paths here; see server/README.md for the systemd unit and
-   nginx config.
+   /messages-admin. That page uses the site's one admin sign-in, run by the
+   media manager (server/media.js) at /admin/login: its scout_admin cookie
+   is signed with SESSION_SECRET, which both servers' env files hold, and
+   checked here the same way. nginx proxies both paths here; see
+   server/README.md for the systemd unit and nginx config.
 
    Storage is a single JSON file in $STATE_DIRECTORY (systemd sets this to
    /var/lib/scout-messages), never inside the web root, with the photos
@@ -24,7 +26,7 @@ var crypto = require("crypto");
 
 var PORT = Number(process.env.PORT) || 3311;
 var HOST = "127.0.0.1";
-var ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+var SESSION_SECRET = process.env.SESSION_SECRET || "";
 var IMPORT_TOKEN = process.env.IMPORT_TOKEN || "";
 var MEDIA_PORT = Number(process.env.MEDIA_PORT) || 3312;
 var STATE = process.env.STATE_DIRECTORY || path.join(__dirname, "data");
@@ -129,17 +131,26 @@ function esc(s) {
 
 function sha(s) { return crypto.createHash("sha256").update(s).digest(); }
 
+// Signed in at /admin/login: the scout_admin cookie is "<expiry>.<hmac of
+// expiry>", keyed on SESSION_SECRET, exactly as media.js makes it.
 function isAdmin(req) {
-  if (!ADMIN_PASSWORD) return false;
-  var m = /^Basic (.+)$/.exec(req.headers.authorization || "");
-  if (!m) return false;
-  var decoded = Buffer.from(m[1], "base64").toString("utf8");
-  var pass = decoded.slice(decoded.indexOf(":") + 1);
-  return crypto.timingSafeEqual(sha(pass), sha(ADMIN_PASSWORD));
+  if (!SESSION_SECRET) return false;
+  var m = /(?:^|;\s*)scout_admin=(\d+)\.([0-9a-f]{64})/.exec(req.headers.cookie || "");
+  if (!m || Number(m[1]) < Date.now()) return false;
+  var good = crypto.createHmac("sha256", SESSION_SECRET).update(m[1]).digest("hex");
+  return crypto.timingSafeEqual(Buffer.from(m[2], "hex"), Buffer.from(good, "hex"));
 }
 
-// Browsers send basic-auth credentials automatically, so admin POSTs must
-// come from this site's own pages, not a form on some other site.
+// The media manager asks how many messages are waiting, for /admin: only
+// straight from 127.0.0.1 (nginx adds X-Real-IP) with IMPORT_TOKEN.
+function internal(req) {
+  var token = String(req.headers["x-import-token"] || "");
+  return !!IMPORT_TOKEN && !req.headers["x-real-ip"] && crypto.timingSafeEqual(sha(token), sha(IMPORT_TOKEN));
+}
+
+// The sign-in cookie is sent automatically, so admin POSTs must come from
+// this site's own pages, not a form on some other site (SameSite=Strict
+// already blocks that; this is a second check).
 // The site is served under several domains, so "this site" is whichever
 // one the request came in on (nginx passes it on as Host).
 function sameOrigin(req) {
@@ -293,7 +304,7 @@ function adminPage(res, msg) {
     'button{font:600 13px system-ui,sans-serif;padding:8px 14px;margin-right:8px;border-radius:999px;border:1px solid #DBC8AE;background:#FAF4EA;cursor:pointer}' +
     'button.approve{background:#A8571F;border-color:#A8571F;color:#FFF8EC}button.delete{color:#9b2c2c}.none{color:#6B5748}' +
     '</style></head><body><main><h1>Messages for Scout</h1>' +
-    '<p class="links"><a href="/media-admin">Media manager →</a></p>' +
+    '<p class="links"><a href="/admin">← Admin</a> · <a href="/media-admin">Media manager →</a></p>' +
     (msg ? '<p class="note">' + esc(msg) + '</p>' : '') +
     '<h2>Waiting for approval (' + pending.length + ')</h2>' + rows(pending, [["approve", "Approve"], ["delete", "Delete"]]) +
     '<h2>On the site (' + approved.length + ')</h2>' + rows(approved, [["hide", "Hide"], ["delete", "Delete"]]) +
@@ -342,8 +353,15 @@ http.createServer(function (req, res) {
     var m = find(photo[2]);
     return sendPhoto(res, m && m.approved ? m : null);
   }
+  if (url === "/internal/stats" && req.method === "GET") {
+    if (!internal(req)) return send(res, 403, "Forbidden");
+    return json(res, 200, { pending: messages.filter(function (m) { return !m.approved; }).length, approved: messages.filter(function (m) { return m.approved; }).length });
+  }
   if (url === "/messages-admin" || photo) {
-    if (!isAdmin(req)) return send(res, 401, "Password required", { "WWW-Authenticate": 'Basic realm="Messages for Scout"' });
+    if (!isAdmin(req)) {
+      if (req.method === "GET" && !photo) return send(res, 303, "", { Location: "/admin/login?next=/messages-admin" });
+      return send(res, 401, "Please sign in at /admin.");
+    }
     if (photo) return sendPhoto(res, find(photo[2]));
     if (req.method === "GET") return adminPage(res, u.searchParams.get("msg"));
     if (req.method === "POST") return adminAction(req, res);

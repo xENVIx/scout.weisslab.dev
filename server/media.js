@@ -1,6 +1,12 @@
 /* Media manager for Scout: a tiny dependency-free backend.
 
-   /media-admin (sign in with ADMIN_PASSWORD; a signed cookie keeps you in)
+   It also runs the site's one admin sign-in: /admin/login takes
+   ADMIN_PASSWORD and sets the scout_admin cookie (Path=/), signed with
+   SESSION_SECRET, which server/messages.js shares and checks the same way,
+   so one sign-in covers /admin (a page of links to everything),
+   /media-admin and /messages-admin.
+
+   /media-admin
    lists everything in media/, the one folder the site's photos and videos
    live in, and lets the owner upload, rename and delete files. Uploads are
    streamed straight to disk, one file per request, with the file as the raw
@@ -36,6 +42,10 @@ var PORT = Number(process.env.PORT) || 3312;
 var HOST = "127.0.0.1";
 var ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 var IMPORT_TOKEN = process.env.IMPORT_TOKEN || "";
+var SESSION_SECRET = process.env.SESSION_SECRET || "";
+var MESSAGES_PORT = Number(process.env.MESSAGES_PORT) || 3311;
+// Where signing in can send you on to.
+var ADMIN_PAGES = ["/admin", "/media-admin", "/messages-admin"];
 var MEDIA_ROOT = process.env.MEDIA_ROOT || path.join(__dirname, "..", "media");
 
 var MAX_UPLOAD = 1024 * 1024 * 1024; // 1 GB per file
@@ -262,22 +272,25 @@ function esc(s) {
 
 function sha(s) { return crypto.createHash("sha256").update(s).digest(); }
 
-// The session cookie is "<expiry>.<hmac of expiry>", keyed on the password,
-// so changing the password signs everyone out.
-function sign(exp) { return crypto.createHmac("sha256", ADMIN_PASSWORD).update(String(exp)).digest("hex"); }
+// The session cookie is "<expiry>.<hmac of expiry>", keyed on SESSION_SECRET
+// (in both servers' env files), so changing it signs everyone out.
+// messages.js checks it with the same code.
+function sign(exp) { return crypto.createHmac("sha256", SESSION_SECRET).update(String(exp)).digest("hex"); }
 
 function sessionCookie() {
   var exp = Date.now() + SESSION_MS;
-  return "scout_media=" + exp + "." + sign(exp) + "; Path=/media-admin; Max-Age=" + SESSION_MS / 1000 +
+  return "scout_admin=" + exp + "." + sign(exp) + "; Path=/; Max-Age=" + SESSION_MS / 1000 +
     "; HttpOnly; Secure; SameSite=Strict";
 }
 
 function isAdmin(req) {
-  if (!ADMIN_PASSWORD) return false;
-  var m = /(?:^|;\s*)scout_media=(\d+)\.([0-9a-f]{64})/.exec(req.headers.cookie || "");
+  if (!ADMIN_PASSWORD || !SESSION_SECRET) return false;
+  var m = /(?:^|;\s*)scout_admin=(\d+)\.([0-9a-f]{64})/.exec(req.headers.cookie || "");
   if (!m || Number(m[1]) < Date.now()) return false;
   return crypto.timingSafeEqual(Buffer.from(m[2], "hex"), Buffer.from(sign(m[1]), "hex"));
 }
+
+function nextPage(v) { return ADMIN_PAGES.indexOf(v) >= 0 ? v : "/admin"; }
 
 var failures = new Map(); // ip -> [timestamps of wrong passwords]
 
@@ -286,29 +299,29 @@ function login(req, res) {
   var now = Date.now();
   var list = (failures.get(ip) || []).filter(function (t) { return now - t < LOGIN_WINDOW_MS; });
   readForm(req, function (f) {
-    if (list.length >= LOGIN_LIMIT) return loginPage(res, "Too many tries. Please wait 15 minutes and try again.");
+    if (list.length >= LOGIN_LIMIT) return loginPage(res, "Too many tries. Please wait 15 minutes and try again.", f.next);
     var pass = String(f.password || "").trim();
     if (ADMIN_PASSWORD && crypto.timingSafeEqual(sha(pass), sha(ADMIN_PASSWORD))) {
       failures.delete(ip);
-      return send(res, 303, "", { Location: "/media-admin", "Set-Cookie": sessionCookie() });
+      return send(res, 303, "", { Location: nextPage(f.next), "Set-Cookie": sessionCookie() });
     }
     list.push(now);
     failures.set(ip, list);
-    loginPage(res, "That password isn't right.");
+    loginPage(res, "That password isn't right.", f.next);
   });
 }
 
-function loginPage(res, error) {
+function loginPage(res, error, next) {
   var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>Scout media</title><style>' +
+    '<title>Scout admin</title><style>' +
     'body{margin:0;padding:24px 20px;background:#FAF4EA;color:#2B211B;font:16px/1.6 Georgia,serif}' +
     'main{max-width:360px;margin:12vh auto 0}h1{font-weight:400}label{display:block;font:600 13px system-ui,sans-serif;margin-bottom:6px}' +
     'input{box-sizing:border-box;width:100%;font:16px system-ui,sans-serif;padding:10px 12px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;margin-bottom:14px}' +
     'button{font:600 15px system-ui,sans-serif;padding:10px 20px;border-radius:999px;border:1px solid #A8571F;background:#A8571F;color:#FFF8EC;cursor:pointer}' +
     '.err{color:#9b2c2c;font:14px system-ui,sans-serif}' +
-    '</style></head><body><main><h1>Scout’s media</h1>' +
+    '</style></head><body><main><h1>Scout admin</h1>' +
     (error ? '<p class="err">' + esc(error) + '</p>' : '') +
-    '<form method="post" action="/media-admin/login"><label for="pw">Password</label>' +
+    '<form method="post" action="/admin/login"><input type="hidden" name="next" value="' + esc(nextPage(next)) + '"><label for="pw">Password</label>' +
     '<input id="pw" name="password" type="password" autocomplete="current-password" autofocus required>' +
     '<button>Sign in</button></form></main></body></html>';
   send(res, error ? 401 : 200, html, { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" });
@@ -510,6 +523,55 @@ function action(req, res) {
   });
 }
 
+// ---- /admin: links to every admin page ----
+
+// How many messages are waiting, from the messages server (null if it
+// can't say).
+function messageCounts(cb) {
+  if (!IMPORT_TOKEN) return cb(null);
+  var req = http.request({ host: "127.0.0.1", port: MESSAGES_PORT, path: "/internal/stats", headers: { "X-Import-Token": IMPORT_TOKEN }, timeout: 2000 }, function (r) {
+    var chunks = [];
+    r.on("data", function (c) { chunks.push(c); });
+    r.on("end", function () { try { cb(r.statusCode === 200 ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : null); } catch (e) { cb(null); } });
+  });
+  req.on("timeout", function () { req.destroy(); });
+  req.on("error", function () { cb(null); });
+  req.end();
+}
+
+function hubPage(res) {
+  messageCounts(function (counts) {
+    var waiting = counts ? counts.pending : null;
+    function card(href, title, text, badge) {
+      return '<a class="card" href="' + href + '"><span class="t">' + title + (badge ? ' <b class="badge">' + badge + '</b>' : '') + '</span><span class="d">' + text + '</span></a>';
+    }
+    var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<title>Scout admin</title><style>' +
+      'body{margin:0;padding:24px 20px 60px;background:#FAF4EA;color:#2B211B;font:16px/1.6 Georgia,serif}' +
+      'main{max-width:640px;margin:0 auto}h1{font-weight:400;margin-bottom:4px}' +
+      'h2{font:600 13px system-ui,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#8F4818;margin:32px 0 10px}' +
+      '.card{display:block;background:#fff;border:1px solid #E5D6C0;border-radius:6px;padding:14px 18px;margin:10px 0;color:inherit;text-decoration:none}' +
+      '.card:hover{border-color:#A8571F}.t{display:block;font:600 16px system-ui,sans-serif}.d{display:block;font:14px system-ui,sans-serif;color:#6B5748}' +
+      '.badge{display:inline-block;min-width:1.6em;padding:0 7px;border-radius:999px;background:#A8571F;color:#FFF8EC;font-size:13px;text-align:center}' +
+      '.sub{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}.sub .card{margin:0}' +
+      '.out{float:right;margin-top:14px}.out button{font:600 13px system-ui,sans-serif;padding:6px 12px;border-radius:999px;border:1px solid #DBC8AE;background:#FAF4EA;cursor:pointer;color:#2B211B}' +
+      '.site{font:14px system-ui,sans-serif}' +
+      '</style></head><body><main><form method="post" action="/admin/logout" class="out"><button>Sign out</button></form>' +
+      '<h1>Scout admin</h1><p class="site"><a href="/">View the site →</a></p>' +
+      '<h2>Messages</h2>' +
+      card("/messages-admin", "Messages", waiting === null ? "Approve, hide or delete what visitors leave, and copy their photos into your media."
+        : waiting ? waiting + " waiting for approval. Approve, hide or delete them, and copy their photos into your media." : "Nothing waiting. Approve, hide or delete what visitors leave, and copy their photos into your media.", waiting || "") +
+      '<h2>Photos and videos</h2>' +
+      card("/media-admin", "Media manager", "Upload, rename and delete files; pick what goes in the gallery, slideshow and Moments; captions, order and transitions.") +
+      '<div class="sub">' +
+      card("/media-admin#title-photo", "Title page photo", "The big photo on the first page.") +
+      card("/media-admin#slideshow", "Slideshow timing", "How long each photo shows.") +
+      card("/media-admin#memorial", "Memorial text", "The words in the Memorial section.") +
+      '</div></main></body></html>';
+    send(res, 200, html, { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" });
+  });
+}
+
 // ---- admin page ----
 
 function kindOf(name) {
@@ -614,7 +676,7 @@ function adminPage(req, res, query) {
     '.jump{font:14px system-ui,sans-serif;margin:-4px 0 0}' +
     '.settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:15px system-ui,sans-serif}.settings input{width:80px;margin-left:8px}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
-    '</style></head><body><main><form method="post" action="/media-admin/logout" class="out"><button>Sign out</button></form><h1>Scout’s media</h1>' +
+    '</style></head><body><main><form method="post" action="/admin/logout" class="out"><button>Sign out</button></form><p class="jump"><a href="/admin">← Admin</a></p><h1>Scout’s media</h1>' +
     '<p class="jump"><a href="#title-photo">Title page photo ↓</a> · <a href="#slideshow">Slideshow timing ↓</a> · <a href="#memorial">Edit the memorial text ↓</a></p>' +
     (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') +
     '<h2>Upload</h2>' +
@@ -876,15 +938,19 @@ function adminClient() {
 http.createServer(function (req, res) {
   var u = new URL(req.url, "http://x");
   if (u.pathname === "/internal/import" && req.method === "POST") return importFromMessages(req, res, u.searchParams);
-  if (["/media-admin", "/media-admin/upload", "/media-admin/login", "/media-admin/logout"].indexOf(u.pathname) < 0) return send(res, 404, "Not found");
-  if (u.pathname === "/media-admin/login" && req.method === "POST") return sameOrigin(req) ? login(req, res) : send(res, 403, "Forbidden");
-  if (u.pathname === "/media-admin/logout" && req.method === "POST") {
-    return send(res, 303, "", { Location: "/media-admin", "Set-Cookie": "scout_media=; Path=/media-admin; Max-Age=0; HttpOnly; Secure; SameSite=Strict" });
+  if (["/admin", "/admin/login", "/admin/logout", "/media-admin", "/media-admin/upload"].indexOf(u.pathname) < 0) return send(res, 404, "Not found");
+  if (u.pathname === "/admin/login") {
+    if (req.method === "POST") return sameOrigin(req) ? login(req, res) : send(res, 403, "Forbidden");
+    return isAdmin(req) ? send(res, 303, "", { Location: nextPage(u.searchParams.get("next")) }) : loginPage(res, "", u.searchParams.get("next"));
+  }
+  if (u.pathname === "/admin/logout" && req.method === "POST") {
+    return send(res, 303, "", { Location: "/admin/login", "Set-Cookie": "scout_admin=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict" });
   }
   if (!isAdmin(req)) {
-    if (req.method === "GET" && u.pathname === "/media-admin") return loginPage(res, "");
+    if (req.method === "GET") return send(res, 303, "", { Location: "/admin/login?next=" + encodeURIComponent(u.pathname) });
     return json(res, 401, { error: "You've been signed out. Reload the page and sign in again." });
   }
+  if (req.method === "GET" && u.pathname === "/admin") return hubPage(res);
   if (req.method === "GET" && u.pathname === "/media-admin") return adminPage(req, res, u.searchParams);
   if (req.method !== "POST") return send(res, 405, "Method not allowed", { Allow: "GET, POST" });
   if (!sameOrigin(req)) return send(res, 403, "Forbidden");
