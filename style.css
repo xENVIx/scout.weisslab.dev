@@ -320,6 +320,7 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 }
 
 #moments .caption { margin-inline: auto; text-align: center; }
+#moments-caption { min-height: 1.7em; } /* keeps the arrows still when a moment has no caption */
 /* Moments: a stack of cards like the slideshow's (.card-stack, above).
    The cards are all absolutely placed, so the section needs its width set
    (in a scene's flex column it would otherwise shrink to fit). */

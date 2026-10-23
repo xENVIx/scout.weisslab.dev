@@ -819,8 +819,8 @@ function windowDots(wrap, dots, current) {
    file's frame delays); then the top
    card slides out to the left and tucks under the bottom of the stack while
    the rest move up one. The arrows and dots go back and forth by hand.
-   Under the stack is the top card's caption from captions.txt, or the
-   section's own caption if it has none. Videos are muted, with a sound
+   Under the stack is the top card's caption from captions.txt (nothing if
+   it has none). Videos are muted, with a sound
    button, and play only while the scene is up and the stack is on screen.
    With nothing ticked, the video in index.html stays as it is. One that
    fails to load gets .is-empty, which shows a placeholder. */
@@ -834,7 +834,6 @@ function windowDots(wrap, dots, current) {
   if (!list || !first) return;
   var template = first.cloneNode(true);
   var captionEl = document.getElementById("moments-caption");
-  var defaultCaption = captionEl ? captionEl.textContent : "";
   var controls = document.getElementById("moments-controls");
   var dotWrap = document.getElementById("moments-dots");
 
@@ -945,7 +944,7 @@ function windowDots(wrap, dots, current) {
       if (card === top && !card.el.querySelector(".is-empty")) card.video.setAttribute("controls", "");
       else { card.video.removeAttribute("controls"); card.video.pause(); }
     });
-    if (captionEl) captionEl.textContent = top.caption || defaultCaption;
+    if (captionEl) captionEl.textContent = top.caption || "";
     dots.forEach(function (d, j) { d.setAttribute("aria-current", j === i ? "true" : "false"); });
     if (dots.length) windowDots(dotWrap, dots, i);
     if (top.video) { try { top.video.currentTime = 0; } catch (e) {} }
