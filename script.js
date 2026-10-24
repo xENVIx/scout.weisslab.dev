@@ -85,8 +85,21 @@ var clipQueue = Promise.resolve();
   var clip = null, clipScene = null, clipTimers = [];
   var clipRun = 0;          // bumped by stopClip, so a clip still waiting for its file gives up
   var CLIP_WAIT_MS = 15000; // longest the next scene waits for a GIF clip that's still downloading
-  var CLIP_AGAIN_MS = 60000; // a transition that just played gives a plain fade until this long after
-  var clipPlayedAt = [];     // by the index of the scene carrying the clip; reset by a reload
+  // "Disable transition animations" at the bottom of the page: unticked,
+  // every transition plays; ticked, they're plain fades and no clips are
+  // downloaded. Remembered in this browser (localStorage).
+  var PREF_KEY = "scout-no-transitions";
+  var noClips = false;
+  try { noClips = localStorage.getItem(PREF_KEY) === "1"; } catch (e) {}
+  var pref = document.getElementById("no-transitions");
+  if (pref) {
+    pref.checked = noClips;
+    pref.addEventListener("change", function () {
+      noClips = pref.checked;
+      try { if (noClips) localStorage.setItem(PREF_KEY, "1"); else localStorage.removeItem(PREF_KEY); } catch (e) {}
+      if (!noClips) { preloadClip(list[current]); preloadClip(list[current + 1]); }
+    });
+  }
 
   document.documentElement.classList.add("scenes");
 
@@ -146,14 +159,11 @@ var clipQueue = Promise.resolve();
   // shown() once `to` starts fading in, and returns true. A GIF that hasn't
   // finished downloading yet (a first visit) holds `to` back, hidden, until
   // it has, so the clip isn't skipped; if it's still not in after
-  // CLIP_WAIT_MS, `to` just fades in without it. Within CLIP_AGAIN_MS of a
-  // clip playing, crossing the same boundary again is a plain fade.
+  // CLIP_WAIT_MS, `to` just fades in without it.
   function playClip(to, from, shown) {
     var i = list.indexOf(to), j = list.indexOf(from);
-    var k = i > j ? i : i + 1;
-    var carrier = clipAt(k);
-    if (!carrier || reduceMotion) return false;
-    if (clipPlayedAt[k] && Date.now() - clipPlayedAt[k] < CLIP_AGAIN_MS) return false;
+    var carrier = clipAt(i > j ? i : i + 1);
+    if (!carrier || reduceMotion || noClips) return false;
     var src = carrier.getAttribute("data-clip");
     var isVideo = /\.(mp4|webm|mov|m4v)$/i.test(src);
     if (!clip) {
@@ -181,7 +191,6 @@ var clipQueue = Promise.resolve();
     return true;
 
     function start() {
-      clipPlayedAt[k] = Date.now();
       var ms = Number(carrier.getAttribute("data-clip-ms")) || 2000;
       var out = Math.max(0, SCENE_OUT_MS - (Date.now() - t0)); // what's left of the old scene's fade-out
       var sceneIn = out + ms; // when the new scene starts fading in
@@ -220,7 +229,7 @@ var clipQueue = Promise.resolve();
   // in the order they're asked for (the next one in, then the one after).
   function preloadClip(scene) {
     var src = scene && scene.getAttribute("data-clip");
-    if (!src || reduceMotion || /\.(mp4|webm|mov|m4v)$/i.test(src)) return Promise.resolve();
+    if (!src || reduceMotion || noClips || /\.(mp4|webm|mov|m4v)$/i.test(src)) return Promise.resolve();
     if (clipLoads[src]) return clipLoads[src];
     return (clipLoads[src] = clipQueue = clipQueue
       .then(function () { return fetch(src, { priority: "high" }); })

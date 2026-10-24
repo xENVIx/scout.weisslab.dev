@@ -424,6 +424,15 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 .message-list .msg-photo img { display: block; max-width: 100%; max-height: 420px; border-radius: 3px; border: 1px solid var(--rule); }
 .message-list .msg time { display: block; margin-top: 8px; font-family: var(--sans); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); }
 
+/* The visitor's switch for the scene transition clips (script.js, scenes). */
+.motion-pref {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-top: clamp(40px, 6vw, 64px);
+  font-family: var(--sans); font-size: 13px; color: var(--ink-mute); cursor: pointer;
+}
+.motion-pref input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+html:not(.scenes) .motion-pref { display: none; } /* no transitions without the scenes */
+
 /* ---- lightbox ----
    .lightbox always scrolls; .lightbox-viewport always centers its
    content via flex. When the image is smaller than the viewport, the
