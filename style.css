@@ -424,28 +424,6 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 .message-list .msg-photo img { display: block; max-width: 100%; max-height: 420px; border-radius: 3px; border: 1px solid var(--rule); }
 .message-list .msg time { display: block; margin-top: 8px; font-family: var(--sans); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); }
 
-/* The visitor's switch for the scene transition clips (script.js, scenes),
-   at the bottom of the screen on every scene, under the clips and lightbox. */
-.motion-pref {
-  position: fixed; left: 50%; bottom: 10px; z-index: 600;
-  transform: translateX(-50%);
-  display: flex; flex-direction: column; align-items: center;
-  max-width: calc(100% - 32px);
-  font-family: var(--sans); font-size: 12px; color: var(--ink-mute);
-  pointer-events: none;
-}
-.motion-pref label, .motion-note {
-  padding: 4px 10px; border-radius: 999px;
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
-}
-.motion-pref label { display: flex; align-items: center; gap: 7px; white-space: nowrap; cursor: pointer; pointer-events: auto; }
-.motion-pref input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
-/* "Scout's moments will no longer…", shown on ticking, fading to nothing. */
-.motion-note { margin: 0 0 4px; font-size: 11px; color: var(--ink-soft); font-style: italic; text-align: center; opacity: 0; }
-.motion-note.is-on { animation: motion-note 4s ease forwards; }
-@keyframes motion-note { 0% { opacity: 0; } 10%, 55% { opacity: 1; } 100% { opacity: 0; } }
-html:not(.scenes) .motion-pref { display: none; } /* no transitions without the scenes */
-
 /* ---- lightbox ----
    .lightbox always scrolls; .lightbox-viewport always centers its
    content via flex. When the image is smaller than the viewport, the

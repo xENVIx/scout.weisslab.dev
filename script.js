@@ -54,11 +54,15 @@ var clipQueue = Promise.resolve();
    show it) uses that clip as the transition between it and the scene before
    it, in place of the usual cross-fade, both ways: arriving from above, and
    leaving it back up. A jump (nav link, dot) plays the one it would have
-   crossed last, coming the normal way. Input waits until it's done. With
-   data-clip-from="<id or data-anchor>", only when that's the scene before.
+   crossed last, coming the normal way. A new scroll, tap, click or key
+   press skips it (skipClip). With data-clip-from="<id or data-anchor>",
+   only when that's the scene before.
    media/transitions.txt (set per GIF at /media-admin) fills these in:
    "<from>><to>=<gif>" lines, e.g. "top>dedication=river.gif", each GIF
    shown for one run through (its length read from its frame delays).
+   "random=<gif>" lines make a pool: every boundary without its own GIF
+   gets data-clip-random and plays one from it, picked (pickClip) before
+   it's needed so it can preload, never the one played just before.
    The clips next to the current scene are preloaded as blobs, and each showing gets
    its own blob: URL. Every <img> of one GIF URL shares a single animation
    clock, so reusing the URL (it may be animating in Moments too) would start
@@ -85,28 +89,10 @@ var clipQueue = Promise.resolve();
   var clip = null, clipScene = null, clipTimers = [];
   var clipRun = 0;          // bumped by stopClip, so a clip still waiting for its file gives up
   var CLIP_WAIT_MS = 15000; // longest the next scene waits for a GIF clip that's still downloading
-  // "Disable transition animations" at the bottom of the screen: unticked,
-  // every transition plays; ticked, they're plain fades and no clips are
-  // downloaded. Remembered in this browser (localStorage).
-  var PREF_KEY = "scout-no-transitions";
-  var noClips = false;
-  try { noClips = localStorage.getItem(PREF_KEY) === "1"; } catch (e) {}
-  var pref = document.getElementById("no-transitions");
-  var prefNote = document.getElementById("motion-note");
-  if (pref) {
-    pref.checked = noClips;
-    pref.addEventListener("change", function () {
-      noClips = pref.checked;
-      if (prefNote) {
-        prefNote.classList.remove("is-on");
-        prefNote.textContent = noClips ? "Scout\u2019s moments will no longer be displayed on page transitions" : "";
-        void prefNote.offsetWidth; // restart the fade
-        if (noClips) prefNote.classList.add("is-on");
-      }
-      try { if (noClips) localStorage.setItem(PREF_KEY, "1"); else localStorage.removeItem(PREF_KEY); } catch (e) {}
-      if (!noClips) { preloadClip(list[current]); preloadClip(list[current + 1]); }
-    });
-  }
+  var clipShown = null;     // the waiting scene's shown(), until it's called
+  var clipPool = [];        // GIFs for transitions without their own ("random=" lines)
+  var lastClip = null;      // the clip played last, so Random doesn't repeat it
+  var lastWheelAt = 0;
 
   document.documentElement.classList.add("scenes");
 
@@ -145,6 +131,7 @@ var clipQueue = Promise.resolve();
     clipRun++;
     clipTimers.forEach(clearTimeout);
     clipTimers = [];
+    clipShown = null;
     if (clip) clip.classList.remove("show");
     if (clipScene) {
       clipScene.style.transitionDelay = "";
@@ -152,6 +139,34 @@ var clipQueue = Promise.resolve();
       clipScene.style.visibility = "";
       clipScene = null;
     }
+  }
+
+  // Cut a transition short: the clip goes, and the new scene fades straight
+  // in (its delayed fade can't just be shortened, so it's restarted).
+  function skipClip() {
+    var to = clipScene, shown = clipShown;
+    if (!shown) return; // only while the clip's up, not once the scene's fading in
+    stopClip();
+    to.style.transition = "none";
+    to.style.opacity = "0";
+    void to.offsetWidth;
+    to.style.transition = "";
+    to.style.transitionDelay = "0s";
+    to.style.opacity = "";
+    setTimeout(function () { if (!clipScene) to.style.transitionDelay = ""; }, SCENE_IN_MS);
+    lockUntil = Date.now() + 400;
+    if (shown) shown();
+  }
+
+  // Give a Random boundary's scene a GIF from the pool, if it has none yet
+  // or has just played it: not the one played last, if there's a choice.
+  function pickClip(scene) {
+    if (!scene || !scene.hasAttribute("data-clip-random") || !clipPool.length) return;
+    if (scene.getAttribute("data-clip") && !scene.hasAttribute("data-clip-used")) return;
+    var choices = clipPool.filter(function (s) { return s !== lastClip; });
+    if (!choices.length) choices = clipPool;
+    scene.setAttribute("data-clip", choices[Math.floor(Math.random() * choices.length)]);
+    scene.removeAttribute("data-clip-used");
   }
 
   // The scene carrying the clip between scenes i - 1 and i is list[i].
@@ -170,8 +185,10 @@ var clipQueue = Promise.resolve();
   function playClip(to, from, shown) {
     var i = list.indexOf(to), j = list.indexOf(from);
     var carrier = clipAt(i > j ? i : i + 1);
-    if (!carrier || reduceMotion || noClips) return false;
+    if (!carrier || reduceMotion) return false;
     var src = carrier.getAttribute("data-clip");
+    lastClip = src;
+    if (carrier.hasAttribute("data-clip-random")) carrier.setAttribute("data-clip-used", "");
     var isVideo = /\.(mp4|webm|mov|m4v)$/i.test(src);
     if (!clip) {
       clip = document.createElement("div");
@@ -180,6 +197,7 @@ var clipQueue = Promise.resolve();
       document.body.appendChild(clip);
     }
     clipScene = to;
+    clipShown = shown;
     var run = clipRun, t0 = Date.now();
     if (isVideo || clipBlobs[src]) { start(); return true; }
     to.style.opacity = "0";
@@ -198,7 +216,7 @@ var clipQueue = Promise.resolve();
     return true;
 
     function start() {
-      var ms = Number(carrier.getAttribute("data-clip-ms")) || 2000;
+      var ms = Number(carrier.getAttribute("data-clip-ms")) || clipMs[src] || 2000;
       var out = Math.max(0, SCENE_OUT_MS - (Date.now() - t0)); // what's left of the old scene's fade-out
       var sceneIn = out + ms; // when the new scene starts fading in
       to.style.transitionDelay = sceneIn + "ms, " + sceneIn + "ms, 0s";
@@ -221,22 +239,23 @@ var clipQueue = Promise.resolve();
       }, out));
       // Start fading out early enough to be gone by the end of the clip.
       clipTimers.push(setTimeout(function () { clip.classList.remove("show"); }, out + Math.max(0, ms - CLIP_FADE_OUT_MS)));
-      clipTimers.push(setTimeout(shown, sceneIn));
+      clipTimers.push(setTimeout(function () { clipShown = null; shown(); }, sceneIn));
       clipTimers.push(setTimeout(stopClip, sceneIn + SCENE_IN_MS));
     }
   }
 
   var clipBlobs = {}; // GIF clip path -> its Blob, once downloaded and timed
+  var clipMs = {};    // GIF clip path -> one run through, in ms, from its frames
   var clipLoads = {}; // GIF clip path -> the download, a promise
   var clipUrl = null; // the blob: URL on screen, revoked when it's done
   // Fetch a scene's GIF clip ahead of time (first in line: the other
   // sections' media wait until they're near, see whenNear), and time it from
-  // its frames unless the scene sets data-clip-ms itself. The promise
+  // its frames (clipMs) unless the scene sets data-clip-ms itself. The promise
   // resolves once it's ready, or failed. Clips download one after another,
   // in the order they're asked for (the next one in, then the one after).
   function preloadClip(scene) {
     var src = scene && scene.getAttribute("data-clip");
-    if (!src || reduceMotion || noClips || /\.(mp4|webm|mov|m4v)$/i.test(src)) return Promise.resolve();
+    if (!src || reduceMotion || /\.(mp4|webm|mov|m4v)$/i.test(src)) return Promise.resolve();
     if (clipLoads[src]) return clipLoads[src];
     return (clipLoads[src] = clipQueue = clipQueue
       .then(function () { return fetch(src, { priority: "high" }); })
@@ -244,7 +263,7 @@ var clipQueue = Promise.resolve();
       .then(function (b) {
         return new Response(b).arrayBuffer().then(function (buf) {
           var ms = gifRunMs(new Uint8Array(buf));
-          if (ms && !scene.hasAttribute("data-clip-ms") && scene.getAttribute("data-clip") === src) scene.setAttribute("data-clip-ms", ms);
+          if (ms) clipMs[src] = ms;
           clipBlobs[src] = b;
         });
       })
@@ -256,6 +275,8 @@ var clipQueue = Promise.resolve();
     .then(function (r) { return r.ok ? r.text() : ""; }, function () { return ""; })
     .then(function (t) {
       t.split("\n").forEach(function (l) {
+        var r = /^\s*random\s*=\s*(.+?)\s*$/.exec(l);
+        if (r) { clipPool.push("media/" + encodeURIComponent(r[1])); return; }
         var m = /^\s*([\w-]+)>([\w-]+)\s*=\s*(.+?)\s*$/.exec(l);
         if (!m) return;
         var to = list.filter(function (sc) { return (sc.getAttribute("data-anchor") || sc.id) === m[2]; })[0];
@@ -264,6 +285,11 @@ var clipQueue = Promise.resolve();
         to.setAttribute("data-clip-from", m[1]);
         to.removeAttribute("data-clip-ms");
       });
+      list.forEach(function (sc, i) {
+        if (i > 0 && clipPool.length && !sc.getAttribute("data-clip")) sc.setAttribute("data-clip-random", "");
+      });
+      pickClip(list[current]);
+      pickClip(list[current + 1]);
       preloadClip(list[current]);
       preloadClip(list[current + 1]);
     });
@@ -297,6 +323,8 @@ var clipQueue = Promise.resolve();
     var anchor = to.getAttribute("data-anchor");
     try { history.replaceState(null, "", anchor ? "#" + anchor : location.pathname + location.search); } catch (e) {}
 
+    pickClip(list[i]);
+    pickClip(list[i + 1]);
     preloadClip(list[i]);     // the clip back up
     preloadClip(list[i + 1]); // the clip on down
 
@@ -344,7 +372,14 @@ var clipQueue = Promise.resolve();
 
   window.addEventListener("wheel", function (e) {
     if (busy()) return;
-    var now = Date.now();
+    var now = Date.now(), gap = now - lastWheelAt;
+    lastWheelAt = now;
+    if (clipShown) {
+      // A fresh scroll (not the tail of the one that started it) skips the clip.
+      e.preventDefault();
+      if (gap > 300) skipClip();
+      return;
+    }
     if (now < lockUntil) {
       // Trackpad momentum keeps firing after a fade starts; hold the lock
       // until that stream of events dies down.
@@ -380,6 +415,7 @@ var clipQueue = Promise.resolve();
 
   document.addEventListener("keydown", function (e) {
     if (busy() || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (clipShown) { if (!e.repeat && e.key !== "Tab" && e.key !== "Shift") { e.preventDefault(); skipClip(); } return; }
     var tag = e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "VIDEO") return;
     var el = list[current];
@@ -402,6 +438,18 @@ var clipQueue = Promise.resolve();
     if (dir > 0 ? atBottom(el) : atTop(el)) go(dir);
     else el.scrollBy({ top: dir * step, behavior: "smooth" });
   });
+
+  // A tap or click during a transition skips it (and goes no further,
+  // unless it's on a nav link or dot, which go where they point).
+  var swallowClick = 0;
+  document.addEventListener("pointerdown", function (e) {
+    if (!clipShown || busy() || e.target.closest('a[href^="#"], .scene-dots')) return;
+    skipClip();
+    swallowClick = Date.now() + 800;
+  }, true);
+  document.addEventListener("click", function (e) {
+    if (Date.now() < swallowClick) { swallowClick = 0; e.preventDefault(); e.stopPropagation(); }
+  }, true);
 
   // Nav links fade to their scene instead of jumping.
   document.addEventListener("click", function (e) {

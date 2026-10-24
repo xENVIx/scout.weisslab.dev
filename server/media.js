@@ -18,8 +18,10 @@
    out of the gallery (every image is in it unless listed), slideshow.txt names files in
    the slideshow (nothing is unless listed). GIFs and videos get a third,
    moments.txt, the ones shown in the Moments section. A GIF can also be
-   picked as the transition between two sections, one GIF per transition:
-   transitions.txt, "<from>><to>=<file>" lines (script.js reads it).
+   picked as the transition between two sections, one GIF per transition,
+   or put in the "Random" pool, which the page draws from for every
+   transition without its own: transitions.txt, "<from>><to>=<file>" and
+   "random=<file>" lines (script.js reads it).
    memorial.txt is the Memorial
    section's text, edited in a box at the bottom of the page (paragraphs
    separated by blank lines). captions.txt holds each file's optional
@@ -173,18 +175,22 @@ function slideSeconds() {
   return n;
 }
 
-// { "<from>><to>": file } for the transitions that have a GIF.
+// { "<from>><to>": file } for the transitions that have a GIF, plus
+// random: [files] for the GIFs in the Random pool.
 function readTransitions() {
-  var t = {};
+  var t = { random: [] };
   readList(TRANSITIONS_FILE).forEach(function (l) {
     var i = l.indexOf("=");
-    if (i > 0) t[l.slice(0, i).trim()] = l.slice(i + 1).trim();
+    if (i <= 0) return;
+    var k = l.slice(0, i).trim(), v = l.slice(i + 1).trim();
+    if (k === "random") t.random.push(v); else t[k] = v;
   });
   return t;
 }
 function writeTransitions(t) {
   writeFile(TRANSITIONS_FILE, TRANSITIONS.filter(function (tr) { return t[tr[0]]; })
-    .map(function (tr) { return tr[0] + "=" + t[tr[0]] + "\n"; }).join(""));
+    .map(function (tr) { return tr[0] + "=" + t[tr[0]] + "\n"; }).join("") +
+    t.random.map(function (f) { return "random=" + f + "\n"; }).join(""));
 }
 
 function writeCaptions(caps) {
@@ -245,10 +251,15 @@ function forgetFile(file, renamedTo) {
   }
   var trans = readTransitions(), moved = false;
   Object.keys(trans).forEach(function (k) {
-    if (trans[k] !== file) return;
+    if (k === "random" || trans[k] !== file) return;
     if (renamedTo) trans[k] = renamedTo; else delete trans[k];
     moved = true;
   });
+  var r = trans.random.indexOf(file);
+  if (r >= 0) {
+    if (renamedTo) trans.random[r] = renamedTo; else trans.random.splice(r, 1);
+    moved = true;
+  }
   if (moved) writeTransitions(trans);
   var caps = readCaptions();
   if (caps[file] !== undefined) {
@@ -557,16 +568,19 @@ function action(req, res) {
       try { setPageFile("intro", f.file); } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
       return json(res, 200, { ok: true });
     }
-    // A GIF's transition ("" for none); one GIF per transition.
+    // A GIF's transition ("" for none, "random" for the Random pool); one
+    // GIF per transition, any number in the pool.
     if (f.action === "transition") {
       if (!exists || !GIF_EXT.test(f.file)) return json(res, 400, { error: "That GIF is gone." });
       var key = String(f.transition || "");
-      if (key && !TRANSITIONS.some(function (tr) { return tr[0] === key; })) return json(res, 400, { error: "No such transition." });
+      if (key && key !== "random" && !TRANSITIONS.some(function (tr) { return tr[0] === key; })) return json(res, 400, { error: "No such transition." });
       try {
         var trans = readTransitions();
-        if (key && trans[key] && trans[key] !== f.file) return json(res, 409, { error: "Another GIF has that one." });
-        Object.keys(trans).forEach(function (k) { if (trans[k] === f.file) delete trans[k]; });
-        if (key) trans[key] = f.file;
+        if (key && key !== "random" && trans[key] && trans[key] !== f.file) return json(res, 409, { error: "Another GIF has that one." });
+        Object.keys(trans).forEach(function (k) { if (k !== "random" && trans[k] === f.file) delete trans[k]; });
+        trans.random = trans.random.filter(function (x) { return x !== f.file; });
+        if (key === "random") trans.random.push(f.file);
+        else if (key) trans[key] = f.file;
         writeTransitions(trans);
       } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
       return json(res, 200, { ok: true });
@@ -710,7 +724,7 @@ function adminPage(req, res, query) {
   };
   var toggle = files.length ? '<div class="view">' + viewLink("type", "By type") + viewLink("order", "Display order") + '</div>' : '';
 
-  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> (photos) puts it in the slideshow; <b>Moments</b> (GIFs and videos) puts it in the Moments section, a stack that moves on by itself: a video after it plays once, a GIF after four plays. A GIF\'s <b>Transition</b> plays it once when moving between two sections (either way, or jumping there with the menu); each transition can have one GIF, and one already taken is greyed out. New uploads are in the gallery but not the slideshow, and go at the end. ' +
+  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> (photos) puts it in the slideshow; <b>Moments</b> (GIFs and videos) puts it in the Moments section, a stack that moves on by itself: a video after it plays once, a GIF after four plays. A GIF\'s <b>Transition</b> plays it once when moving between two sections (either way, or jumping there with the menu); each transition can have one GIF, and one already taken is greyed out. <b>Random</b> puts a GIF in a pool: every transition without its own GIF plays one from it, picked at random. Visitors can skip a transition by scrolling, tapping or pressing a key. New uploads are in the gallery but not the slideshow, and go at the end. ' +
     'To change the order, switch to <b>Display order</b> and drag a file to its new place (by its ⠿ handle on a phone). A caption shows under the photo in the slideshow and the enlarged view.</p>';
 
   var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -788,13 +802,15 @@ function adminPage(req, res, query) {
   send(res, 200, html, headers);
 }
 
-// A GIF's "Transition" menu: None, or a transition between sections. Ones
-// another GIF has are greyed out (adminClient keeps that up to date).
+// A GIF's "Transition" menu: None, Random, or a transition between sections.
+// Ones another GIF has are greyed out (adminClient keeps that up to date);
+// Random never is.
 function transitionPicker(file, transitions) {
-  var mine = "";
-  Object.keys(transitions).forEach(function (k) { if (transitions[k] === file) mine = k; });
+  var mine = transitions.random.indexOf(file) >= 0 ? "random" : "";
+  Object.keys(transitions).forEach(function (k) { if (k !== "random" && transitions[k] === file) mine = k; });
   return '<div class="row transition" data-file="' + esc(file) + '"><label>Transition ' +
     '<select class="transition-pick" aria-label="Transition for ' + esc(file) + '"><option value="">None</option>' +
+    '<option value="random"' + (mine === "random" ? ' selected' : '') + '>Random (any without its own)</option>' +
     TRANSITIONS.map(function (tr) {
       var taken = transitions[tr[0]] && transitions[tr[0]] !== file;
       return '<option value="' + tr[0] + '"' + (tr[0] === mine ? ' selected' : '') + (taken ? ' disabled' : '') + '>' + esc(tr[1]) + '</option>';
@@ -857,7 +873,7 @@ function adminClient() {
   var picks = Array.prototype.slice.call(document.querySelectorAll(".transition-pick"));
   function greyOut() {
     var taken = {};
-    picks.forEach(function (p) { if (p.value) taken[p.value] = p; });
+    picks.forEach(function (p) { if (p.value && p.value !== "random") taken[p.value] = p; });
     picks.forEach(function (p) {
       Array.prototype.forEach.call(p.options, function (o) { o.disabled = !!o.value && !!taken[o.value] && taken[o.value] !== p; });
     });
