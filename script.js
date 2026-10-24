@@ -85,6 +85,8 @@ var clipQueue = Promise.resolve();
   var clip = null, clipScene = null, clipTimers = [];
   var clipRun = 0;          // bumped by stopClip, so a clip still waiting for its file gives up
   var CLIP_WAIT_MS = 15000; // longest the next scene waits for a GIF clip that's still downloading
+  var CLIP_AGAIN_MS = 60000; // a transition that just played gives a plain fade until this long after
+  var clipPlayedAt = [];     // by the index of the scene carrying the clip; reset by a reload
 
   document.documentElement.classList.add("scenes");
 
@@ -144,11 +146,14 @@ var clipQueue = Promise.resolve();
   // shown() once `to` starts fading in, and returns true. A GIF that hasn't
   // finished downloading yet (a first visit) holds `to` back, hidden, until
   // it has, so the clip isn't skipped; if it's still not in after
-  // CLIP_WAIT_MS, `to` just fades in without it.
+  // CLIP_WAIT_MS, `to` just fades in without it. Within CLIP_AGAIN_MS of a
+  // clip playing, crossing the same boundary again is a plain fade.
   function playClip(to, from, shown) {
     var i = list.indexOf(to), j = list.indexOf(from);
-    var carrier = clipAt(i > j ? i : i + 1);
+    var k = i > j ? i : i + 1;
+    var carrier = clipAt(k);
     if (!carrier || reduceMotion) return false;
+    if (clipPlayedAt[k] && Date.now() - clipPlayedAt[k] < CLIP_AGAIN_MS) return false;
     var src = carrier.getAttribute("data-clip");
     var isVideo = /\.(mp4|webm|mov|m4v)$/i.test(src);
     if (!clip) {
@@ -176,6 +181,7 @@ var clipQueue = Promise.resolve();
     return true;
 
     function start() {
+      clipPlayedAt[k] = Date.now();
       var ms = Number(carrier.getAttribute("data-clip-ms")) || 2000;
       var out = Math.max(0, SCENE_OUT_MS - (Date.now() - t0)); // what's left of the old scene's fade-out
       var sceneIn = out + ms; // when the new scene starts fading in
