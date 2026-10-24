@@ -38,6 +38,7 @@ var DATA_FILE = path.join(STATE, "messages.json");
 var PHOTO_DIR = path.join(STATE, "photos");
 
 var MAX_LEN = 2000;
+var MAX_NAME = 80;
 var MAX_BODY = 16 * 1024;          // admin forms
 var MAX_PHOTO = 8 * 1024 * 1024;   // a photo, after the page has shrunk it
 var MAX_POST = 12 * 1024 * 1024;   // a message with its photo (base64 is 4/3 the size)
@@ -197,6 +198,7 @@ function listApproved(res) {
     .sort(function (a, b) { return b.createdAt.localeCompare(a.createdAt); })
     .map(function (m) {
       var o = { id: m.id, text: m.text, createdAt: m.createdAt };
+      if (m.name) o.name = m.name;
       if (m.photo) o.photo = "/api/messages/photo/" + m.id;
       return o;
     });
@@ -210,12 +212,15 @@ function create(req, res) {
     // Honeypot: the form has a hidden "website" field people never fill in.
     if (body.website) return json(res, 201, { ok: true });
     var text = String(body.text || "").replace(/\r\n?/g, "\n").trim();
+    // Optional; blank stays anonymous. One line, no control characters.
+    var name = String(body.name || "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_NAME);
     var photo = body.photo ? decodePhoto(body.photo) : null;
     if (typeof photo === "string") return json(res, 400, { error: photo });
     if (!text && !photo) return json(res, 400, { error: "Please write a message or add a photo." });
     if (text.length > MAX_LEN) return json(res, 400, { error: "That message is too long (" + MAX_LEN + " characters max)." });
     if (rateLimited(clientIp(req))) return json(res, 429, { error: "You've sent a few messages already. Please try again later." });
     var m = { id: crypto.randomUUID(), text: text, createdAt: new Date().toISOString(), approved: false };
+    if (name) m.name = name;
     if (photo) {
       m.photo = m.id + "." + photo.type.ext;
       try {
@@ -266,7 +271,7 @@ function sendMail(to, subject, text, cb) {
 function notify(m, host) {
   if (!NOTIFY_EMAIL) return;
   var what = m.photo ? (m.text ? "a message and a photo" : "a photo") : "a message";
-  var text = "Someone left " + what + " for Scout. It's waiting for your approval:\n\n" +
+  var text = (m.name ? m.name + " (the name they gave)" : "Someone") + " left " + what + " for Scout. It's waiting for your approval:\n\n" +
     "https://" + (host || "inlovingmemoryofscout.com") + "/messages-admin\n\n" +
     (m.text ? "Their message:\n\n" + m.text + "\n" : "(No message, just a photo.)\n");
   sendMail(NOTIFY_EMAIL, "New " + (m.photo && !m.text ? "photo" : "message") + " for Scout", text, function (err) {
@@ -331,7 +336,7 @@ function adminPage(res, msg) {
     return list.slice().sort(function (a, b) { return b.createdAt.localeCompare(a.createdAt); }).map(function (m) {
       return '<div class="msg">' + (m.text ? '<p>' + esc(m.text).replace(/\n/g, "<br>") + '</p>' : '<p class="none">(No message, just a photo.)</p>') +
         photoBlock(m) +
-        '<div class="meta">' + esc(new Date(m.createdAt).toLocaleString("en-US", { timeZone: "America/New_York" })) + '</div>' +
+        '<div class="meta">' + (m.name ? '<b>' + esc(m.name) + '</b> · ' : 'Anonymous · ') + esc(new Date(m.createdAt).toLocaleString("en-US", { timeZone: "America/New_York" })) + '</div>' +
         '<form method="post">' + '<input type="hidden" name="id" value="' + esc(m.id) + '">' +
         actions.map(function (a) { return '<button name="action" value="' + a[0] + '" class="' + a[0] + '">' + a[1] + '</button>'; }).join("") +
         (m.photo && m.text ? '<button name="action" value="removephoto" class="delete">Remove photo</button>' : '') +

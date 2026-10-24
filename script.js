@@ -1288,6 +1288,12 @@ function windowDots(wrap, dots, current) {
           a.appendChild(img);
           div.appendChild(a);
         }
+        if (m.name) {
+          var who = document.createElement("p");
+          who.className = "msg-name";
+          who.textContent = "\u2014 " + m.name;
+          div.appendChild(who);
+        }
         var t = document.createElement("time");
         t.dateTime = m.createdAt;
         t.textContent = new Date(m.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
@@ -1353,7 +1359,7 @@ function windowDots(wrap, dots, current) {
     if (!text && !photo) { status.textContent = "Please write a message or add a photo."; return; }
     button.disabled = true;
     status.textContent = "Sending…";
-    var body = { text: text, website: form.elements.website.value };
+    var body = { text: text, name: form.elements.name.value.trim(), website: form.elements.website.value };
     if (photo) body.photo = photo;
     fetch(API, {
       method: "POST",

@@ -147,6 +147,8 @@
   <form class="message-form" id="message-form">
     <label class="sr-only" for="message-text">Your message</label>
     <textarea id="message-text" name="text" rows="5" maxlength="2000" placeholder="A favorite memory of Scout, or a few words for him&hellip;"></textarea>
+    <label class="sr-only" for="message-name">Your name (optional)</label>
+    <input type="text" id="message-name" name="name" maxlength="80" autocomplete="name" placeholder="Your name (optional)" />
     <div class="message-photo">
       <label class="photo-pick">
         <input type="file" id="message-photo" accept="image/*" />
@@ -164,7 +166,7 @@
       <p class="message-status" id="message-status" aria-live="polite"></p>
     </div>
   </form>
-  <p class="message-note">Messages and photos show up here once they've been approved.</p>
+  <p class="message-note">Leave your name blank to stay anonymous. Messages and photos show up here once they've been approved.</p>
   <div class="message-list" id="message-list"></div>
 </section>
 </div>

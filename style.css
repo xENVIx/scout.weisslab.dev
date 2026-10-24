@@ -375,13 +375,14 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 /* ---- messages (form + approved list; backend in server/messages.js) ---- */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .message-form .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
-.message-form textarea {
+.message-form textarea, .message-form #message-name {
   display: block; width: 100%; resize: vertical; min-height: 120px;
   padding: 14px 16px; border: 1px solid var(--edge); border-radius: 3px;
   background: #FFFDF8; color: var(--ink);
   font: 300 clamp(17px, 1.9vw, 19px)/1.6 var(--serif);
 }
-.message-form textarea:focus { outline: 2px solid rgba(168,87,31,.35); outline-offset: 1px; border-color: var(--accent); }
+.message-form #message-name { min-height: 0; margin-top: 10px; padding: 10px 16px; font-size: clamp(16px, 1.7vw, 17px); }
+.message-form textarea:focus, .message-form #message-name:focus { outline: 2px solid rgba(168,87,31,.35); outline-offset: 1px; border-color: var(--accent); }
 /* "Add a photo": the file input sits invisibly over its label; script.js
    shows the shrunk photo in .photo-preview with a remove button. */
 .message-photo { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 12px; }
@@ -422,6 +423,8 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 .message-list .msg-photo { display: block; margin-top: 12px; }
 .message-list .msg p + .msg-photo { margin-top: 14px; }
 .message-list .msg-photo img { display: block; max-width: 100%; max-height: 420px; border-radius: 3px; border: 1px solid var(--rule); }
+.message-list .msg .msg-name { margin-top: 10px; font-size: clamp(16px, 1.7vw, 18px); font-style: italic; color: var(--ink-soft); }
+.message-list .msg .msg-name + time { margin-top: 4px; }
 .message-list .msg time { display: block; margin-top: 8px; font-family: var(--sans); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); }
 
 /* ---- lightbox ----

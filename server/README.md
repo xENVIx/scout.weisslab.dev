@@ -6,8 +6,8 @@ There's one admin password: `ADMIN_PASSWORD` in `/etc/scout-media.env`, until th
 
 `messages.js` is a dependency-free Node server on `127.0.0.1:3311`:
 
-- `GET /api/messages` returns approved messages, newest first (with `photo`, a URL, when there is one).
-- `POST /api/messages` (`{"text": "...", "photo": "data:image/...;base64,..."}`, either or both) stores a pending message, with a honeypot field and a limit of 5 per IP per hour. The page shrinks a photo to 2400 px and re-saves it as a JPEG first (GIFs go as they are); the server takes JPEG, PNG, GIF or WebP (checked by their first bytes), 8 MB max.
+- `GET /api/messages` returns approved messages, newest first (with `photo`, a URL, when there is one, and `name` when they gave one).
+- `POST /api/messages` (`{"text": "...", "photo": "data:image/...;base64,...", "name": "..."}`, text or photo or both; `name` optional, 80 characters, one line) stores a pending message, with a honeypot field and a limit of 5 per IP per hour. The page shrinks a photo to 2400 px and re-saves it as a JPEG first (GIFs go as they are); the server takes JPEG, PNG, GIF or WebP (checked by their first bytes), 8 MB max.
 - `GET /api/messages/photo/<id>` serves a photo once its message is approved; `/messages-admin/photo/<id>` serves it to the admin any time.
 - `/messages-admin` is the approval page, behind the admin sign-in (above). Each message can be approved, hidden or deleted, and one with a photo can have just the photo removed, or copied into `media/` ("Copy to my media", with Gallery / Slideshow, or Moments for a GIF, and optionally its text as the caption).
 
