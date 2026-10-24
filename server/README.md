@@ -6,16 +6,17 @@ There's one admin password: `ADMIN_PASSWORD` in `/etc/scout-media.env`, until th
 
 `messages.js` is a dependency-free Node server on `127.0.0.1:3311`:
 
-- `GET /api/messages` returns approved messages, newest first (with `photo`, a URL, when there is one, and `name` when they gave one).
-- `POST /api/messages` (`{"text": "...", "photo": "data:image/...;base64,...", "name": "..."}`, text or photo or both; `name` optional, 80 characters, one line) stores a pending message, with a honeypot field and a limit of 5 per IP per hour. The page shrinks a photo to 2400 px and re-saves it as a JPEG first (GIFs go as they are); the server takes JPEG, PNG, GIF or WebP (checked by their first bytes), 8 MB max.
-- `GET /api/messages/photo/<id>` serves a photo once its message is approved; `/messages-admin/photo/<id>` serves it to the admin any time.
-- `/messages-admin` is the approval page, behind the admin sign-in (above). Each message can be approved, hidden or deleted, and one with a photo can have just the photo removed, or copied into `media/` ("Copy to my media", with Gallery / Slideshow, or Moments for a GIF, and optionally its text as the caption).
+- `POST /api/messages/upload` takes one photo or video as the raw request body (streamed to `uploads/` in the state dir) and answers `{"token": ..., "kind": "image"|"video"}`. The type comes from the file's first bytes: JPEG, PNG, GIF or WebP up to 8 MB, MP4, MOV or WebM up to 300 MB (nginx allows 310 MB on this path only, unbuffered). 60 uploads per IP per hour; an upload no message claims is deleted after 6 hours (and on restart). The page shrinks a photo to 2400 px and re-saves it as a JPEG first; GIFs and videos go as they are.
+- `GET /api/messages` returns approved messages, newest first (with `files`, `[{url, kind}]`, when there are any, and `name` when they gave one).
+- `POST /api/messages` (`{"text": "...", "files": [tokens], "name": "..."}`, text or files or both, up to 10 files; `name` optional, 80 characters, one line) stores a pending message, with a honeypot field and a limit of 5 per IP per hour. Its files move from `uploads/` to `photos/` as `<id>-<n>.<ext>`.
+- `GET /api/messages/file/<id>/<n>` serves file n once its message is approved, with Range requests (so videos stream and seek); `/messages-admin/file/<id>/<n>` serves it to the admin any time. (`/…/photo/<id>`, from when a message had at most one photo, still serves file 0. Messages saved then, with `photo`, are read as one file.)
+- `/messages-admin` is the approval page, behind the admin sign-in (above). Each message can be approved, hidden or deleted; each of its files can be removed (unless it's all the message has) or copied into `media/` ("Copy to my media", with Gallery / Slideshow, or Moments for a GIF or video, and optionally the message as the caption).
 
 Each new message is emailed to `NOTIFY_EMAIL` (in `/etc/scout-messages.env`; leave it out to turn emails off), from `NOTIFY_FROM` (set to `scout@weisslab.dev`; the code's default is `scout@inlovingmemoryofscout.com`), with a link to `/messages-admin`. `messages.js` hands it to the server's Postfix on `127.0.0.1:25` (the service's sandbox can't run `sendmail`), and Postfix delivers it directly, saying `HELO weisslab.dev` (`smtp_helo_name`). Gmail only accepts it if the sending domain's DNS has an SPF record for this server, `v=spf1 ip4:134.199.206.222 ~all` on `weisslab.dev`, and the server's reverse DNS (the droplet's name, `weisslab.dev`) points back to it. Delivery is logged in `/var/log/mail.log`.
 
-Messages are stored in `/var/lib/scout-messages/messages.json`, outside the web root, with their photos in `/var/lib/scout-messages/photos/`. (systemd's `DynamicUser` puts them under `/var/lib/private/scout-messages/`.)
+Messages are stored in `/var/lib/scout-messages/messages.json`, outside the web root, with their photos and videos in `/var/lib/scout-messages/photos/`. (systemd's `DynamicUser` puts them under `/var/lib/private/scout-messages/`.)
 
-Copying a photo into `media/` goes through the media manager, since only it can write there: `messages.js` POSTs the file to `http://127.0.0.1:3312/internal/import` with an `X-Import-Token` header. Both env files hold the same `IMPORT_TOKEN`; the media manager refuses the request without it, or if it came through nginx (which never proxies `/internal/` anyway).
+Copying a photo or video into `media/` goes through the media manager, since only it can write there: `messages.js` streams the file to `http://127.0.0.1:3312/internal/import` with an `X-Import-Token` header. Both env files hold the same `IMPORT_TOKEN`; the media manager refuses the request without it, or if it came through nginx (which never proxies `/internal/` anyway).
 
 ## Install (run as root)
 

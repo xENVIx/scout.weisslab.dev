@@ -1247,12 +1247,13 @@ function windowDots(wrap, dots, current) {
     .catch(function () {});
 })();
 
-/* Messages: visitors leave a note for Scout, a photo, or both. New ones are
+/* Messages: visitors leave a note for Scout, up to MAX_FILES photos, GIFs
+   and videos, or both (the note is optional with a file). New ones are
    held until approved at /messages-admin (server/messages.js), so the form
    only says thanks; the list shows already-approved ones, newest first.
    A photo is shrunk here before it's sent (at most PHOTO_MAX px a side,
-   re-saved as a JPEG, which also drops its location data); a GIF goes as
-   it is, so it still moves. */
+   re-saved as a JPEG, which also drops its location data); a GIF or video
+   goes as it is. Each file is uploaded on its own first (uploadItem). */
 (function messages() {
   var form = document.getElementById("message-form");
   var list = document.getElementById("message-list");
@@ -1261,14 +1262,16 @@ function windowDots(wrap, dots, current) {
   var API = "/api/messages";
   var PHOTO_MAX = 2400;           // px, longest side
   var GIF_MAX = 8 * 1024 * 1024;  // bytes, as in server/messages.js
+  var VIDEO_MAX = 300 * 1024 * 1024;
+  var MAX_FILES = 10;
   var picker = document.getElementById("message-photo");
-  var preview = document.getElementById("photo-preview");
-  var photo = null; // the photo to send, as a data: URL
+  var attachList = document.getElementById("attach-list");
+  var items = []; // what's being sent: { kind, blob, preview (blob: URL), token once uploaded }
 
   fetch(API)
     .then(function (r) { return r.ok ? r.json() : []; })
-    .then(function (items) {
-      items.forEach(function (m) {
+    .then(function (msgs) {
+      msgs.forEach(function (m) {
         var div = document.createElement("div");
         div.className = "msg";
         if (m.text) {
@@ -1276,17 +1279,33 @@ function windowDots(wrap, dots, current) {
           p.textContent = m.text;
           div.appendChild(p);
         }
-        if (m.photo) {
-          var a = document.createElement("a");
-          a.className = "msg-photo";
-          a.href = m.photo;
-          a.target = "_blank";
-          var img = document.createElement("img");
-          whenNear(list, function () { img.src = m.photo; });
-          img.alt = "A photo of Scout, shared by a visitor";
-          img.loading = "lazy";
-          a.appendChild(img);
-          div.appendChild(a);
+        var files = m.files || [];
+        if (files.length) {
+          var media = document.createElement("div");
+          media.className = "msg-media" + (files.length > 1 ? " is-multi" : "");
+          files.forEach(function (f) {
+            if (f.kind === "video") {
+              var v = document.createElement("video");
+              v.className = "msg-video";
+              v.controls = true;
+              v.playsInline = true;
+              v.preload = "none";
+              whenNear(list, function () { v.preload = "metadata"; v.src = f.url; });
+              media.appendChild(v);
+              return;
+            }
+            var a = document.createElement("a");
+            a.className = "msg-photo";
+            a.href = f.url;
+            a.target = "_blank";
+            var img = document.createElement("img");
+            whenNear(list, function () { img.src = f.url; });
+            img.alt = "A photo of Scout, shared by a visitor";
+            img.loading = "lazy";
+            a.appendChild(img);
+            media.appendChild(a);
+          });
+          div.appendChild(media);
         }
         if (m.name) {
           var who = document.createElement("p");
@@ -1303,16 +1322,14 @@ function windowDots(wrap, dots, current) {
     })
     .catch(function () {});
 
-  // The picked photo, ready to send: a GIF as it is, anything else drawn
-  // onto a canvas no bigger than PHOTO_MAX and saved as a JPEG.
+  // A picked photo, ready to send as a Blob: a GIF as it is, anything else
+  // drawn onto a canvas no bigger than PHOTO_MAX and saved as a JPEG (which
+  // also drops its location data). A video goes as it is.
   function readPhoto(file) {
     return new Promise(function (resolve, reject) {
       if (/^image\/gif$/i.test(file.type)) {
         if (file.size > GIF_MAX) return reject(new Error("That GIF is too big (8 MB max)."));
-        var fr = new FileReader();
-        fr.onload = function () { resolve(fr.result); };
-        fr.onerror = function () { reject(new Error("")); };
-        return fr.readAsDataURL(file);
+        return resolve(file);
       }
       var url = URL.createObjectURL(file);
       var img = new Image();
@@ -1323,57 +1340,138 @@ function windowDots(wrap, dots, current) {
         c.height = Math.round(img.naturalHeight * scale);
         c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
         URL.revokeObjectURL(url);
-        resolve(c.toDataURL("image/jpeg", 0.86));
+        c.toBlob(function (b) { if (b) resolve(b); else reject(new Error("")); }, "image/jpeg", 0.86);
       };
       img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("")); };
       img.src = url;
     });
   }
-  function clearPhoto() {
-    photo = null;
-    if (picker) picker.value = "";
-    if (preview) { preview.hidden = true; preview.querySelector("img").removeAttribute("src"); }
-  }
-  if (picker && preview) {
-    picker.addEventListener("change", function () {
-      var file = picker.files && picker.files[0];
-      if (!file) return clearPhoto();
-      status.textContent = "Getting the photo ready…";
-      readPhoto(file).then(function (data) {
-        photo = data;
-        preview.querySelector("img").src = data;
-        preview.hidden = false;
-        status.textContent = "";
-      }, function (err) {
-        clearPhoto();
-        status.textContent = err.message || "That photo couldn’t be opened. Please try a JPEG or PNG.";
-      });
+  function readFile(file) {
+    if (/^video\//i.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name)) {
+      if (file.size > VIDEO_MAX) return Promise.reject(new Error("“" + file.name + "” is too big (300 MB max for a video)."));
+      return Promise.resolve({ kind: "video", blob: file });
+    }
+    if (!/^image\//i.test(file.type)) return Promise.reject(new Error("“" + file.name + "” isn’t a photo or video."));
+    return readPhoto(file).then(function (b) { return { kind: "image", blob: b }; }, function (err) {
+      throw new Error(err.message || "“" + file.name + "” couldn’t be opened. Please try a JPEG or PNG.");
     });
-    document.getElementById("photo-remove").addEventListener("click", clearPhoto);
+  }
+
+  // The thumbnails of what's attached, each with a remove button.
+  function showItems() {
+    attachList.textContent = "";
+    attachList.hidden = !items.length;
+    items.forEach(function (it) {
+      var box = document.createElement("div");
+      box.className = "attach";
+      var el = document.createElement(it.kind === "video" ? "video" : "img");
+      if (it.kind === "video") { el.muted = true; el.playsInline = true; el.preload = "metadata"; el.src = it.preview + "#t=0.1"; }
+      else el.alt = "A photo you're sending";
+      if (it.kind !== "video") el.src = it.preview;
+      box.appendChild(el);
+      if (it.kind === "video") {
+        var badge = document.createElement("span");
+        badge.className = "attach-badge";
+        badge.textContent = "Video";
+        box.appendChild(badge);
+      }
+      var x = document.createElement("button");
+      x.type = "button";
+      x.setAttribute("aria-label", "Remove this " + (it.kind === "video" ? "video" : "photo"));
+      x.textContent = "\u00d7";
+      x.addEventListener("click", function () {
+        URL.revokeObjectURL(it.preview);
+        items.splice(items.indexOf(it), 1);
+        showItems();
+      });
+      box.appendChild(x);
+      attachList.appendChild(box);
+    });
+  }
+  function clearItems() {
+    items.forEach(function (it) { URL.revokeObjectURL(it.preview); });
+    items = [];
+    showItems();
+  }
+
+  if (picker && attachList) {
+    picker.addEventListener("change", function () {
+      var files = Array.prototype.slice.call(picker.files || []);
+      picker.value = ""; // so the same file can be picked again
+      if (!files.length) return;
+      var room = MAX_FILES - items.length, problems = [];
+      if (files.length > room) {
+        problems.push("Up to " + MAX_FILES + " photos and videos per message.");
+        files = files.slice(0, Math.max(0, room));
+      }
+      status.textContent = "Getting " + (files.length === 1 ? "it" : "them") + " ready…";
+      files.reduce(function (chain, file) {
+        return chain.then(function () {
+          return readFile(file).then(function (it) {
+            it.preview = URL.createObjectURL(it.blob);
+            items.push(it);
+            showItems();
+          }, function (err) { problems.push(err.message); });
+        });
+      }, Promise.resolve()).then(function () { status.textContent = problems.join(" "); });
+    });
+  }
+
+  // Each file goes up on its own, with progress, and comes back as a token
+  // the message then names. A file that's already up keeps its token, so
+  // trying again after a failure only sends what's left.
+  function uploadItem(it, n, total) {
+    if (it.token) return Promise.resolve(it.token);
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      var label = (total > 1 ? " " + (n + 1) + " of " + total : "");
+      xhr.open("POST", API + "/upload");
+      xhr.setRequestHeader("Content-Type", it.blob.type || "application/octet-stream");
+      xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable) status.textContent = "Uploading" + label + "… " + Math.floor(e.loaded / e.total * 100) + "%";
+      };
+      xhr.onload = function () {
+        var b = {};
+        try { b = JSON.parse(xhr.responseText); } catch (e) {}
+        if (xhr.status === 201 && b.token) { it.token = b.token; resolve(b.token); }
+        else reject(new Error(b.error || (xhr.status === 413 ? "That file is too big." : "")));
+      };
+      xhr.onerror = function () { reject(new Error("The upload was interrupted. Please try again.")); };
+      status.textContent = "Uploading" + label + "…";
+      xhr.send(it.blob);
+    });
   }
 
   form.addEventListener("submit", function (e) {
     e.preventDefault();
     var button = form.querySelector("button[type=submit]");
     var text = form.elements.text.value.trim();
-    if (!text && !photo) { status.textContent = "Please write a message or add a photo."; return; }
+    if (!text && !items.length) { status.textContent = "Please write a message or add a photo or video."; return; }
     button.disabled = true;
-    status.textContent = "Sending…";
-    var body = { text: text, name: form.elements.name.value.trim(), website: form.elements.website.value };
-    if (photo) body.photo = photo;
-    fetch(API, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    })
+    var tokens = [];
+    items.reduce(function (chain, it, n) {
+      return chain.then(function () { return uploadItem(it, n, items.length).then(function (t) { tokens.push(t); }); });
+    }, Promise.resolve())
+      .then(function () {
+        status.textContent = "Sending…";
+        return fetch(API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: text, name: form.elements.name.value.trim(), website: form.elements.website.value, files: tokens })
+        });
+      })
       .then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (b) {
-          if (!r.ok) throw new Error(b.error || (r.status === 413 ? "That photo is too big. Please try a smaller one." : ""));
+          if (!r.ok) {
+            // A token the server no longer knows (it waited too long): upload again next time.
+            if (r.status === 400 && /didn't finish uploading/.test(b.error || "")) items.forEach(function (it) { delete it.token; });
+            throw new Error(b.error || "");
+          }
         });
       })
       .then(function () {
         form.reset();
-        clearPhoto();
+        clearItems();
         status.textContent = "Thank you. It will appear here once it’s been approved.";
       })
       .catch(function (err) {

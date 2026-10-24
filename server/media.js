@@ -28,7 +28,7 @@
    caption ("<file>=<caption>"), and order.txt the display order the owner
    set by dragging (files it doesn't name follow, by filename). settings.txt
    holds "slide_seconds=<n>", how long each photo shows in the slideshow.
-   /internal/import takes a visitor's photo from the messages server
+   /internal/import takes a visitor's photo or video from the messages server
    (server/messages.js), straight from 127.0.0.1 with IMPORT_TOKEN; nginx
    never passes that path on, and anything it does pass carries X-Real-IP.
    page_files.txt names the files
@@ -486,25 +486,35 @@ function importFromMessages(req, res, query) {
   var token = String(req.headers["x-import-token"] || "");
   if (!IMPORT_TOKEN || req.headers["x-real-ip"] || !crypto.timingSafeEqual(sha(token), sha(IMPORT_TOKEN))) return send(res, 403, "Forbidden");
   var name = cleanName(query.get("name"));
-  if (!validFile(name) || VIDEO_EXT.test(name)) return json(res, 400, { error: "That isn't a photo." });
+  if (!validFile(name)) return json(res, 400, { error: "That isn't a photo or video." });
   var base = name.replace(/(\.[^.]+)$/, ""), ext = path.extname(name);
   for (var n = 2; fs.existsSync(filePath(name)); n++) name = base + "-" + n + ext;
-  var chunks = [], size = 0;
-  req.on("data", function (c) { size += c.length; if (size <= MAX_UPLOAD) chunks.push(c); });
-  req.on("end", function () {
-    if (!size || size > MAX_UPLOAD) return json(res, 400, { error: "That photo is empty or too big." });
+  // Streamed to a hidden .part file (videos can be big), then renamed.
+  var tmp = filePath("." + name + "." + crypto.randomBytes(4).toString("hex") + ".part");
+  var out = fs.createWriteStream(tmp, { flags: "wx" }), size = 0, failed = false;
+  function fail(error) {
+    if (failed) return;
+    failed = true;
+    out.destroy();
+    fs.rm(tmp, { force: true }, function () {});
+    json(res, 400, { error: error });
+  }
+  req.on("data", function (c) { size += c.length; if (size > MAX_UPLOAD) { fail("That file is too big."); req.destroy(); } });
+  out.on("error", function (e) { console.error(e); fail("Couldn't save the file."); });
+  out.on("finish", function () {
+    if (failed) return;
+    if (!size) return fail("That file is empty.");
     try {
-      var tmp = filePath("." + name + "." + crypto.randomBytes(4).toString("hex") + ".part");
-      fs.writeFileSync(tmp, Buffer.concat(chunks), { flag: "wx" });
       fs.renameSync(tmp, filePath(name));
       setFlag(GALLERY_OUT_LIST, name, query.get("gallery") !== "1");
       if (MOMENT_EXT.test(name)) setFlag(MOMENTS_LIST, name, query.get("moments") === "1");
       else setFlag(SLIDES_LIST, name, query.get("slideshow") === "1");
       var caption = String(query.get("caption") || "").replace(/\s+/g, " ").trim().slice(0, MAX_CAPTION);
       if (caption) { var caps = readCaptions(); caps[name] = caption; writeCaptions(caps); }
-    } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save the photo." }); }
+    } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save the file." }); }
     json(res, 201, { ok: true, name: name });
   });
+  req.pipe(out);
 }
 
 // ---- actions (form posts) ----

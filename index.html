@@ -151,22 +151,19 @@
     <input type="text" id="message-name" name="name" maxlength="80" autocomplete="name" placeholder="Your name (optional)" />
     <div class="message-photo">
       <label class="photo-pick">
-        <input type="file" id="message-photo" accept="image/*" />
+        <input type="file" id="message-photo" accept="image/*,video/*" multiple />
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><circle cx="5.5" cy="6.5" r="1.3" fill="currentColor"/><path d="m2 12 4-4 3 3 2-2 3.5 3.5" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-        <span>Add a photo</span>
+        <span>Add photos or videos</span>
       </label>
-      <div class="photo-preview" id="photo-preview" hidden>
-        <img alt="The photo you're sending" />
-        <button type="button" id="photo-remove" aria-label="Remove the photo">&times;</button>
-      </div>
     </div>
+    <div class="attach-list" id="attach-list" hidden></div>
     <input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" />
     <div class="message-actions">
       <button type="submit" class="message-send">Leave a message</button>
       <p class="message-status" id="message-status" aria-live="polite"></p>
     </div>
   </form>
-  <p class="message-note">Leave your name blank to stay anonymous. Messages and photos show up here once they've been approved.</p>
+  <p class="message-note">Leave your name blank to stay anonymous. Messages, photos and videos show up here once they've been approved.</p>
   <div class="message-list" id="message-list"></div>
 </section>
 </div>
