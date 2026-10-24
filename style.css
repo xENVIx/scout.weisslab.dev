@@ -498,6 +498,15 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
   -webkit-mask-image: radial-gradient(circle closest-side, #000 45%, transparent 100%);
   mask-image: radial-gradient(circle closest-side, #000 45%, transparent 100%);
 }
+/* On a wide enough screen (desktop, a tablet sideways) the clip is an oval,
+   wider than high, with the same soft edge; phones keep the circle. */
+@media (min-width: 700px) and (min-aspect-ratio: 5/4) {
+  .scene-clip img, .scene-clip video {
+    width: min(88vw, 960px, 128vh); aspect-ratio: 16 / 10;
+    -webkit-mask-image: radial-gradient(ellipse closest-side, #000 45%, transparent 100%);
+    mask-image: radial-gradient(ellipse closest-side, #000 45%, transparent 100%);
+  }
+}
 .scene-clip.show img, .scene-clip.show video { transform: scale(1); transition: transform 1800ms cubic-bezier(.2,.7,.3,1); }
 
 footer { border-top: 1px solid var(--rule); }
