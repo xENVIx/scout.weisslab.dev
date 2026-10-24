@@ -85,17 +85,24 @@ var clipQueue = Promise.resolve();
   var clip = null, clipScene = null, clipTimers = [];
   var clipRun = 0;          // bumped by stopClip, so a clip still waiting for its file gives up
   var CLIP_WAIT_MS = 15000; // longest the next scene waits for a GIF clip that's still downloading
-  // "Disable transition animations" at the bottom of the page: unticked,
+  // "Disable transition animations" at the bottom of the screen: unticked,
   // every transition plays; ticked, they're plain fades and no clips are
   // downloaded. Remembered in this browser (localStorage).
   var PREF_KEY = "scout-no-transitions";
   var noClips = false;
   try { noClips = localStorage.getItem(PREF_KEY) === "1"; } catch (e) {}
   var pref = document.getElementById("no-transitions");
+  var prefNote = document.getElementById("motion-note");
   if (pref) {
     pref.checked = noClips;
     pref.addEventListener("change", function () {
       noClips = pref.checked;
+      if (prefNote) {
+        prefNote.classList.remove("is-on");
+        prefNote.textContent = noClips ? "Scout\u2019s moments will no longer be displayed on page transitions" : "";
+        void prefNote.offsetWidth; // restart the fade
+        if (noClips) prefNote.classList.add("is-on");
+      }
       try { if (noClips) localStorage.setItem(PREF_KEY, "1"); else localStorage.removeItem(PREF_KEY); } catch (e) {}
       if (!noClips) { preloadClip(list[current]); preloadClip(list[current + 1]); }
     });

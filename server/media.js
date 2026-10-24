@@ -711,7 +711,7 @@ function adminPage(req, res, query) {
   var toggle = files.length ? '<div class="view">' + viewLink("type", "By type") + viewLink("order", "Display order") + '</div>' : '';
 
   var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> (photos) puts it in the slideshow; <b>Moments</b> (GIFs and videos) puts it in the Moments section, a stack that moves on by itself: a video after it plays once, a GIF after four plays. A GIF\'s <b>Transition</b> plays it once when moving between two sections (either way, or jumping there with the menu); each transition can have one GIF, and one already taken is greyed out. New uploads are in the gallery but not the slideshow, and go at the end. ' +
-    'To change the order, switch to <b>Display order</b> and drag a file by its ⠿ handle. A caption shows under the photo in the slideshow and the enlarged view.</p>';
+    'To change the order, switch to <b>Display order</b> and drag a file to its new place (by its ⠿ handle on a phone). A caption shows under the photo in the slideshow and the enlarged view.</p>';
 
   var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<title>Scout media</title><style>' +
@@ -747,6 +747,7 @@ function adminPage(req, res, query) {
     'button.primary{background:#A8571F;border-color:#A8571F;color:#FFF8EC}button.delete{color:#9b2c2c}' +
     '.grip{flex:none;align-self:stretch;width:34px;padding:0;border:0;border-radius:3px;background:#F6EEE2;color:#9b8775;font-size:20px;cursor:grab;touch-action:none}' +
     '.grip:hover,.grip:focus-visible{background:#EFE2CE;color:#8F4818}' +
+    '#sortable .file{cursor:grab}#sortable .file input,#sortable .file select,#sortable .file label{cursor:auto}#sortable .file button,#sortable .flags label{cursor:pointer}#sortable .file .grip{cursor:grab}' +
     '.file.dragging{opacity:.75;border-color:#A8571F;box-shadow:0 8px 24px rgba(64,42,25,.18)}.file.dragging .grip{cursor:grabbing}' +
     '.order-note{font:13px system-ui,sans-serif;color:#6B5748;min-height:1.4em;margin:0}' +
     '@media(max-width:520px){.file{flex-direction:column}.thumb{flex-basis:auto;width:100%;height:180px}' +
@@ -906,8 +907,9 @@ function adminClient() {
     f.addEventListener("submit", function (e) { if (!confirm(f.getAttribute("data-confirm"))) e.preventDefault(); });
   });
 
-  // Display order view: drag a row by its handle (mouse or finger), or focus
-  // the handle and use the arrow keys. The new order saves when you let go.
+  // Display order view: drag a row by its handle (finger), anywhere on the
+  // row but its boxes and buttons (mouse), or focus the handle and use the
+  // arrow keys. The new order saves when you let go.
   var sortable = document.getElementById("sortable");
   var orderNote = document.getElementById("order-note");
   if (sortable) {
@@ -922,11 +924,12 @@ function adminClient() {
     };
     var drag = null, scrollTimer = null;
     sortable.addEventListener("pointerdown", function (e) {
-      var grip = e.target.closest(".grip");
-      if (!grip || e.button > 0) return;
+      var grip = e.target.closest(".grip"), row = e.target.closest(".file");
+      if (!row || e.button > 0) return;
+      if (!grip && (e.pointerType !== "mouse" || e.target.closest("input,select,textarea,button,label,form"))) return;
       e.preventDefault();
-      grip.setPointerCapture(e.pointerId);
-      drag = { row: grip.closest(".file"), grip: grip, y: e.clientY, moved: false };
+      sortable.setPointerCapture(e.pointerId);
+      drag = { row: row, y: e.clientY, moved: false };
       drag.row.classList.add("dragging");
       // Scroll the page while the finger or mouse is near the top or bottom.
       scrollTimer = setInterval(function () {
@@ -963,8 +966,13 @@ function adminClient() {
       drag.row.classList.remove("dragging");
       var moved = drag.moved;
       drag = null;
-      if (moved) saveOrder();
+      if (moved) { saveOrder(); justDragged = true; setTimeout(function () { justDragged = false; }, 0); }
     };
+    // Letting go over a thumbnail shouldn't also open it, and the browser's
+    // own image/link dragging would take over from ours.
+    var justDragged = false;
+    sortable.addEventListener("click", function (e) { if (justDragged) { e.preventDefault(); e.stopPropagation(); } }, true);
+    sortable.addEventListener("dragstart", function (e) { e.preventDefault(); });
     sortable.addEventListener("pointerup", endDrag);
     sortable.addEventListener("pointercancel", endDrag);
     sortable.addEventListener("keydown", function (e) {
