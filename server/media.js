@@ -808,6 +808,14 @@ function adminPage(req, res, query) {
     '.sizer{position:absolute;left:6px;top:6px;z-index:1;width:max(calc(100% - 28px),180px);box-sizing:border-box;display:flex;gap:6px;align-items:center;padding:4px 8px;border-radius:999px;background:rgba(255,253,248,.92);box-shadow:0 1px 4px rgba(0,0,0,.2);font:600 12px system-ui,sans-serif;color:#2B211B}' +
     '.memorial-preview figure.is-right .sizer{left:auto;right:6px}' +
     '.sizer input{flex:1;min-width:0;margin:0}.sizer output{min-width:3.2em;text-align:right}' +
+    // Sliders drawn here, not by the browser (its knob stops short of the end
+    // at 100%): the filled part is --fill wide, set by fillRange().
+    'input[type=range]{-webkit-appearance:none;appearance:none;height:22px;padding:0;background:transparent;cursor:pointer}' +
+    'input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(#A8571F,#A8571F) 0 0/var(--fill,50%) 100% no-repeat,#E5D6C0}' +
+    'input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;margin-top:-6px;border-radius:50%;background:#A8571F;border:2px solid #FFF8EC;box-sizing:border-box;box-shadow:0 1px 3px rgba(0,0,0,.3)}' +
+    'input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:#E5D6C0}input[type=range]::-moz-range-progress{height:6px;border-radius:3px;background:#A8571F}' +
+    'input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#A8571F;border:2px solid #FFF8EC;box-sizing:border-box;box-shadow:0 1px 3px rgba(0,0,0,.3)}' +
+    'input[type=range]:focus-visible{outline:2px solid #A8571F;outline-offset:2px;border-radius:4px}' +
     '.photo-pick .size{display:flex;gap:8px;align-items:center;margin-top:10px}.photo-pick .size input{flex:1;max-width:320px}' +
     '.settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:15px system-ui,sans-serif}.settings input{width:80px;margin-left:8px}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
@@ -1083,6 +1091,12 @@ function adminClient() {
       add(at, v.length);
       return out;
     };
+    // Colours a slider's track up to the knob's centre (the knob runs from
+    // 9px in to 9px from the end).
+    var fillRange = function (r) {
+      var f = (r.value - r.min) / (r.max - r.min);
+      r.style.setProperty("--fill", "calc(9px + (100% - 18px) * " + f + ")");
+    };
     // A Size slider on each photo in the preview rewrites its line's size.
     var addSizer = function (fig, block) {
       var box = document.createElement("label"), range = document.createElement("input"), out = document.createElement("output");
@@ -1092,7 +1106,9 @@ function adminClient() {
       out.textContent = block.size + "%";
       box.appendChild(range); box.appendChild(out);
       fig.appendChild(box);
+      fillRange(range);
       range.addEventListener("input", function () {
+        fillRange(range);
         var size = memorialSize(range.value), r = paraRanges()[block.n];
         if (!r) return;
         var v = ta.value.replace(/\r\n?/g, "\n"), line = v.slice(r[0], r[1]), m = MEMORIAL_PHOTO.exec(line);
@@ -1156,7 +1172,8 @@ function adminClient() {
       }
     });
     var pickSize = document.getElementById("photo-size");
-    pickSize.addEventListener("input", function () { document.getElementById("photo-size-out").textContent = pickSize.value + "%"; });
+    fillRange(pickSize);
+    pickSize.addEventListener("input", function () { fillRange(pickSize); document.getElementById("photo-size-out").textContent = pickSize.value + "%"; });
     document.querySelector(".photo-grid").addEventListener("click", function (e) {
       var b = e.target.closest("button[data-file]");
       if (!b) return;
