@@ -810,12 +810,15 @@ function adminPage(req, res, query) {
     '.sizer input{flex:1;min-width:0;margin:0}.sizer output{min-width:3.2em;text-align:right}' +
     // Sliders drawn here, not by the browser (its knob stops short of the end
     // at 100%): the filled part is --fill wide, set by fillRange().
-    'input[type=range]{-webkit-appearance:none;appearance:none;height:22px;padding:0;background:transparent;cursor:pointer}' +
+    'input[type=range]{-webkit-appearance:none;appearance:none;height:22px;padding:0;border:0;box-shadow:none;background:transparent;cursor:pointer}' +
     'input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(#A8571F,#A8571F) 0 0/var(--fill,50%) 100% no-repeat,#E5D6C0}' +
     'input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;margin-top:-6px;border-radius:50%;background:#A8571F;border:2px solid #FFF8EC;box-sizing:border-box;box-shadow:0 1px 3px rgba(0,0,0,.3)}' +
     'input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:#E5D6C0}input[type=range]::-moz-range-progress{height:6px;border-radius:3px;background:#A8571F}' +
     'input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#A8571F;border:2px solid #FFF8EC;box-sizing:border-box;box-shadow:0 1px 3px rgba(0,0,0,.3)}' +
     'input[type=range]:focus-visible{outline:2px solid #A8571F;outline-offset:2px;border-radius:4px}' +
+    '.photo-edit{position:sticky;top:0;z-index:2;display:flex;gap:12px;align-items:center;border:1px solid #A8571F;border-radius:6px;background:#FFFDF8;padding:10px;margin-bottom:10px;font:14px system-ui,sans-serif;box-shadow:0 4px 12px rgba(64,42,25,.12)}' +
+    '.photo-edit[hidden]{display:none}.photo-edit img{width:64px;height:64px;object-fit:cover;border-radius:4px;flex:none}.pe-body{flex:1;min-width:0}' +
+    '.pe-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.photo-edit .size{display:flex;gap:8px;align-items:center;margin-top:6px}.photo-edit .size input{flex:1}' +
     '.photo-pick .size{display:flex;gap:8px;align-items:center;margin-top:10px}.photo-pick .size input{flex:1;max-width:320px}' +
     '.settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:15px system-ui,sans-serif}.settings input{width:80px;margin-left:8px}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
@@ -844,7 +847,7 @@ function adminPage(req, res, query) {
     '<p class="hint">This is the text in the Memorial section. Leave a blank line between paragraphs; the first paragraph gets the large first letter. ' +
     'Select some words and press <b>B</b> or <i>I</i> to make them bold or italic (they get **stars** around them). <b>Heading</b> makes the paragraph your cursor is in a heading (it starts with "# "). ' +
     '<b>Add photo</b> puts a photo after the paragraph your cursor is in, as a line like <code>(Scout as a puppy[01_scout_baby.jpg])</code>: the words in brackets are its caption (optional). ' +
-    'Drag the <b>Size</b> slider on a photo in the preview to make it smaller or bigger; that adds a size to its line, like <code>01_scout_baby.jpg 35%</code> (35% of the text’s width; from 70% up it sits centered on its own). ' +
+    'To make a photo smaller or bigger, put your cursor on its line (a bar with its <b>Size</b> slider shows up above the box) or use the slider on it in the preview; that adds a size to its line, like <code>01_scout_baby.jpg 35%</code> (35% of the text’s width; from 70% up it sits centered on its own). ' +
     'Photos sit beside the text on a computer, taking turns left and right, and between paragraphs on a phone. Move or delete the line to move or remove the photo. Nothing changes on the site until you save.</p>' +
     '<form method="post" class="memorial" id="memorial-form"><input type="hidden" name="action" value="memorial">' +
     '<div class="tools" role="toolbar" aria-label="Formatting">' +
@@ -859,6 +862,8 @@ function adminPage(req, res, query) {
     files.filter(function (f) { return PHOTO_EXT.test(f.name) || /\.gif$/i.test(f.name); }).map(function (f) {
       return '<button type="button" data-file="' + esc(f.name) + '" title="' + esc(f.name) + '"><img src="' + esc("/media/" + encodeURIComponent(f.name)) + '" loading="lazy" alt=""><span>' + esc(f.name) + '</span></button>';
     }).join("") + '</div></div>' +
+    '<div class="photo-edit" id="photo-edit" hidden><img alt=""><div class="pe-body"><div class="pe-name" id="pe-name"></div>' +
+    '<label class="size">Size <input type="range" id="pe-size" min="15" max="100" step="1" value="46"> <output id="pe-out"></output></label></div></div>' +
     '<textarea name="text" id="memorial-text" aria-label="Memorial text" maxlength="' + MAX_MEMORIAL + '">' + esc(memorial) + '</textarea>' +
     '<button class="primary">Save memorial text</button> <span class="saved" id="memorial-dirty" aria-live="polite"></span></form>' +
     '<h3 class="preview-head">Preview</h3><div class="memorial-preview" id="memorial-preview"></div>' +
@@ -1106,20 +1111,54 @@ function adminClient() {
       out.textContent = block.size + "%";
       box.appendChild(range); box.appendChild(out);
       fig.appendChild(box);
+      fig.setAttribute("data-n", block.n);
       fillRange(range);
-      range.addEventListener("input", function () {
-        fillRange(range);
-        var size = memorialSize(range.value), r = paraRanges()[block.n];
-        if (!r) return;
-        var v = ta.value.replace(/\r\n?/g, "\n"), line = v.slice(r[0], r[1]), m = MEMORIAL_PHOTO.exec(line);
-        if (!m) return;
-        ta.value = v.slice(0, r[0]) + "(" + m[1] + "[" + m[2] + " " + size + "%])" + v.slice(r[1]);
-        out.textContent = size + "%";
-        sizeMemorialPhoto(fig, size);
-        dirtyNote.textContent = ta.value === saved ? "" : "Not saved yet";
-      });
+      range.addEventListener("input", function () { setSize(block.n, memorialSize(range.value)); });
       range.addEventListener("change", draw); // on letting go: re-lay the sides (centred ones don't take a turn)
     };
+    // Rewrites the size in paragraph n's photo line, keeping the cursor where
+    // it was, and moves both of its sliders and its preview to match.
+    var setSize = function (n, size) {
+      var r = paraRanges()[n];
+      if (!r) return;
+      var v = ta.value, m = MEMORIAL_PHOTO.exec(v.slice(r[0], r[1]));
+      if (!m) return;
+      var tag = "(" + m[1] + "[" + m[2] + " " + size + "%])", d = tag.length - (r[1] - r[0]);
+      var a = ta.selectionStart, z = ta.selectionEnd;
+      var fix = function (p) { return p <= r[0] ? p : p >= r[1] ? p + d : Math.min(p, r[0] + tag.length - 1); };
+      ta.value = v.slice(0, r[0]) + tag + v.slice(r[1]);
+      ta.setSelectionRange(fix(a), fix(z));
+      dirtyNote.textContent = ta.value === saved ? "" : "Not saved yet";
+      var fig = preview.querySelector('figure[data-n="' + n + '"]');
+      if (fig) {
+        sizeMemorialPhoto(fig, size);
+        var fr = fig.querySelector(".sizer input");
+        fr.value = size; fillRange(fr);
+        fig.querySelector(".sizer output").textContent = size + "%";
+      }
+      if (editN === n) { peSize.value = size; fillRange(peSize); peOut.textContent = size + "%"; }
+    };
+    // The bar above the box: the photo whose line the cursor is on, with
+    // its own Size slider (nearer than the preview, on a phone).
+    var bar = document.getElementById("photo-edit"), peImg = bar.querySelector("img"), peName = document.getElementById("pe-name");
+    var peSize = document.getElementById("pe-size"), peOut = document.getElementById("pe-out"), editN = -1;
+    var showBar = function () {
+      var at = ta.selectionStart, rs = paraRanges(), n = -1;
+      rs.forEach(function (r, i) { if (at >= r[0] && at <= r[1]) n = i; });
+      var m = n >= 0 && MEMORIAL_PHOTO.exec(ta.value.slice(rs[n][0], rs[n][1]));
+      if (!m) { bar.hidden = true; editN = -1; return; }
+      editN = n;
+      bar.hidden = false;
+      var url = "/media/" + encodeURIComponent(m[2]);
+      if (peImg.getAttribute("src") !== url) peImg.src = url;
+      peName.textContent = (m[1].trim() || "No caption") + " · " + m[2];
+      var size = memorialSize(m[3]);
+      peSize.value = size; fillRange(peSize); peOut.textContent = size + "%";
+    };
+    ["click", "keyup", "input", "select", "focus"].forEach(function (t) { ta.addEventListener(t, showBar); });
+    document.addEventListener("selectionchange", function () { if (document.activeElement === ta) showBar(); });
+    peSize.addEventListener("input", function () { if (editN >= 0) setSize(editN, memorialSize(peSize.value)); });
+    peSize.addEventListener("change", draw);
     var draw = function () {
       renderMemorial(ta.value, preview, {
         dir: "/media/",
@@ -1143,6 +1182,7 @@ function adminClient() {
       ta.focus();
       ta.setSelectionRange(from, to);
       draw();
+      showBar();
     };
     // The paragraph the cursor is in: [start, end) of ta.value.
     var paraAt = function (at) {
