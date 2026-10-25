@@ -73,7 +73,7 @@ var PAGE_LIST = "page_files.txt";
 var MEMORIAL_FILE = "memorial.txt";
 // A photo in the memorial text: a paragraph of "(caption[file])" (as in
 // /memorial.js, which draws the page and the preview here).
-var MEMORIAL_PHOTO = /^\(([^\[\]]*)\[\s*<?([^\[\]<>\/\\]+?)>?\s*\]\)$/;
+var MEMORIAL_PHOTO = /^\(([^\[\]]*)\[\s*<?([^\[\]<>\/\\]+?)>?(?:\s+(\d{1,3})%)?\s*\]\)$/;
 var ROLES = { intro: "the intro photo", "catch": "the Moments video when none are ticked" };
 var GALLERY_OUT_LIST = "not_in_gallery.txt";
 var SLIDES_LIST = "slideshow.txt";
@@ -277,7 +277,7 @@ function forgetFile(file, renamedTo) {
     var m = MEMORIAL_PHOTO.exec(p);
     if (!m || m[2] !== file) return p;
     tagged = true;
-    return renamedTo ? "(" + m[1] + "[" + renamedTo + "])" : null;
+    return renamedTo ? "(" + m[1] + "[" + renamedTo + (m[3] ? " " + m[3] + "%" : "") + "])" : null;
   }).filter(function (p) { return p !== null; });
   if (tagged) writeFile(MEMORIAL_FILE, paras.join("\n\n") + "\n");
 }
@@ -803,7 +803,12 @@ function adminPage(req, res, query) {
     '.memorial-preview strong{font-weight:700;color:#33271F}.memorial-preview h3{font:italic 400 1.35em/1.3 Georgia,serif;color:#33271F;clear:both}' +
     '.memorial-preview figure img{display:block;width:100%;border-radius:3px}.memorial-preview figcaption{font-size:14px;font-style:italic;text-align:center;color:#6B5748;margin-top:6px}' +
     '.memorial-preview .missing{display:block;padding:18px;border:1px dashed #9b2c2c;color:#9b2c2c;font:13px system-ui,sans-serif;text-align:center}.memorial-preview figure.is-missing img{display:none}' +
-    '@media(min-width:700px){.memorial-preview figure{width:46%;margin-bottom:10px}.memorial-preview figure.is-right{float:right;margin-left:24px}.memorial-preview figure.is-left{float:left;margin-right:24px}}' +
+    '.memorial-preview figure{position:relative;width:min(100%,calc(var(--w,46)*2%));margin-left:auto;margin-right:auto}' +
+    '@media(min-width:700px){.memorial-preview figure{width:calc(var(--w,46)*1%);margin-bottom:10px}.memorial-preview figure.is-right:not(.is-wide){float:right;margin-left:24px;margin-right:0}.memorial-preview figure.is-left:not(.is-wide){float:left;margin-right:24px;margin-left:0}.memorial-preview figure.is-wide{clear:both}}' +
+    '.sizer{position:absolute;left:6px;top:6px;z-index:1;width:max(calc(100% - 28px),180px);box-sizing:border-box;display:flex;gap:6px;align-items:center;padding:4px 8px;border-radius:999px;background:rgba(255,253,248,.92);box-shadow:0 1px 4px rgba(0,0,0,.2);font:600 12px system-ui,sans-serif;color:#2B211B}' +
+    '.memorial-preview figure.is-right .sizer{left:auto;right:6px}' +
+    '.sizer input{flex:1;min-width:0;margin:0}.sizer output{min-width:3.2em;text-align:right}' +
+    '.photo-pick .size{display:flex;gap:8px;align-items:center;margin-top:10px}.photo-pick .size input{flex:1;max-width:320px}' +
     '.settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:15px system-ui,sans-serif}.settings input{width:80px;margin-left:8px}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
     '</style></head><body><main><form method="post" action="/admin/logout" class="out"><button>Sign out</button></form><p class="jump"><a href="/admin">← Admin</a></p><h1>Scout’s media</h1>' +
@@ -831,6 +836,7 @@ function adminPage(req, res, query) {
     '<p class="hint">This is the text in the Memorial section. Leave a blank line between paragraphs; the first paragraph gets the large first letter. ' +
     'Select some words and press <b>B</b> or <i>I</i> to make them bold or italic (they get **stars** around them). <b>Heading</b> makes the paragraph your cursor is in a heading (it starts with "# "). ' +
     '<b>Add photo</b> puts a photo after the paragraph your cursor is in, as a line like <code>(Scout as a puppy[01_scout_baby.jpg])</code>: the words in brackets are its caption (optional). ' +
+    'Drag the <b>Size</b> slider on a photo in the preview to make it smaller or bigger; that adds a size to its line, like <code>01_scout_baby.jpg 35%</code> (35% of the text’s width; from 70% up it sits centered on its own). ' +
     'Photos sit beside the text on a computer, taking turns left and right, and between paragraphs on a phone. Move or delete the line to move or remove the photo. Nothing changes on the site until you save.</p>' +
     '<form method="post" class="memorial" id="memorial-form"><input type="hidden" name="action" value="memorial">' +
     '<div class="tools" role="toolbar" aria-label="Formatting">' +
@@ -840,6 +846,7 @@ function adminPage(req, res, query) {
     '<button type="button" id="photo-toggle" aria-expanded="false" aria-controls="photo-pick">Add photo</button></div>' +
     '<div class="photo-pick" id="photo-pick" hidden>' +
     '<label>Caption (optional) <input type="text" id="photo-cap" maxlength="200" placeholder="e.g. Scout at the farm, 2015"></label>' +
+    '<label class="size">Size <input type="range" id="photo-size" min="15" max="100" step="1" value="46"> <output id="photo-size-out">46%</output></label>' +
     '<p class="hint">Tap a photo to add it after the paragraph your cursor is in.</p><div class="photo-grid">' +
     files.filter(function (f) { return PHOTO_EXT.test(f.name) || /\.gif$/i.test(f.name); }).map(function (f) {
       return '<button type="button" data-file="' + esc(f.name) + '" title="' + esc(f.name) + '"><img src="' + esc("/media/" + encodeURIComponent(f.name)) + '" loading="lazy" alt=""><span>' + esc(f.name) + '</span></button>';
@@ -1063,9 +1070,44 @@ function adminClient() {
   if (ta && typeof renderMemorial === "function") {
     var preview = document.getElementById("memorial-preview"), dirtyNote = document.getElementById("memorial-dirty");
     var saved = ta.value, drawTimer;
+    // The paragraphs of the text box as [start, end) ranges, the non-blank
+    // ones in the order memorialBlocks() numbers them.
+    var paraRanges = function () {
+      var v = ta.value.replace(/\r\n?/g, "\n"), re = /\n\s*\n/g, out = [], at = 0, m;
+      var add = function (a, z) {
+        while (a < z && /\s/.test(v[a])) a++;
+        while (z > a && /\s/.test(v[z - 1])) z--;
+        if (z > a) out.push([a, z]);
+      };
+      while ((m = re.exec(v))) { add(at, m.index); at = re.lastIndex; }
+      add(at, v.length);
+      return out;
+    };
+    // A Size slider on each photo in the preview rewrites its line's size.
+    var addSizer = function (fig, block) {
+      var box = document.createElement("label"), range = document.createElement("input"), out = document.createElement("output");
+      box.className = "sizer";
+      box.appendChild(document.createTextNode("Size"));
+      range.type = "range"; range.min = MEMORIAL_MIN; range.max = 100; range.step = 1; range.value = block.size;
+      out.textContent = block.size + "%";
+      box.appendChild(range); box.appendChild(out);
+      fig.appendChild(box);
+      range.addEventListener("input", function () {
+        var size = memorialSize(range.value), r = paraRanges()[block.n];
+        if (!r) return;
+        var v = ta.value.replace(/\r\n?/g, "\n"), line = v.slice(r[0], r[1]), m = MEMORIAL_PHOTO.exec(line);
+        if (!m) return;
+        ta.value = v.slice(0, r[0]) + "(" + m[1] + "[" + m[2] + " " + size + "%])" + v.slice(r[1]);
+        out.textContent = size + "%";
+        sizeMemorialPhoto(fig, size);
+        dirtyNote.textContent = ta.value === saved ? "" : "Not saved yet";
+      });
+      range.addEventListener("change", draw); // on letting go: re-lay the sides (centred ones don't take a turn)
+    };
     var draw = function () {
       renderMemorial(ta.value, preview, {
         dir: "/media/",
+        onPhoto: function (fig, url, caption, block) { addSizer(fig, block); },
         onMissing: function (fig, file) {
           var s = document.createElement("span");
           s.className = "missing";
@@ -1113,11 +1155,14 @@ function adminClient() {
         b.setAttribute("aria-expanded", String(!pickBox.hidden));
       }
     });
+    var pickSize = document.getElementById("photo-size");
+    pickSize.addEventListener("input", function () { document.getElementById("photo-size-out").textContent = pickSize.value + "%"; });
     document.querySelector(".photo-grid").addEventListener("click", function (e) {
       var b = e.target.closest("button[data-file]");
       if (!b) return;
       var cap = document.getElementById("photo-cap");
-      var tag = "(" + cap.value.replace(/[\[\]\s]+/g, " ").trim() + "[" + b.getAttribute("data-file") + "])";
+      var size = memorialSize(document.getElementById("photo-size").value);
+      var tag = "(" + cap.value.replace(/[\[\]\s]+/g, " ").trim() + "[" + b.getAttribute("data-file") + (size === MEMORIAL_SIZE ? "" : " " + size + "%") + "])";
       var v = ta.value, end = v.trim() ? paraAt(ta.selectionStart)[1] : 0;
       var before = v.slice(0, end).replace(/\s+$/, ""), after = v.slice(end).replace(/^\s+/, "");
       var nv = (before ? before + "\n\n" : "") + tag + (after ? "\n\n" + after : "");

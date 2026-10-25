@@ -6,18 +6,35 @@
      (A description[photo.jpg])   (a paragraph of just this: a photo from
                             media/ with that caption; the description is
                             optional: ([photo.jpg]), and <photo.jpg> works too)
+     (A description[photo.jpg 35%])  the same at 35% of the text's width
+                            (MEMORIAL_SIZE when none is given; from 70% up it
+                            sits centred on its own instead of beside the text)
    Everything is built as DOM nodes with textContent, never as HTML.
    renderMemorial(text, container, opts) fills container; opts.dir is the
    media folder's URL, opts.setSrc(img, url) sets a photo's src (the page
-   uses it to load lazily), opts.onPhoto(fig, file, caption) hooks clicks. */
-var MEMORIAL_PHOTO = /^\(([^\[\]]*)\[\s*<?([^\[\]<>\/\\]+?)>?\s*\]\)$/;
+   uses it to load lazily), opts.onPhoto(fig, url, caption, block) hooks
+   clicks (block.n is its paragraph's place among the non-blank ones). */
+var MEMORIAL_PHOTO = /^\(([^\[\]]*)\[\s*<?([^\[\]<>\/\\]+?)>?(?:\s+(\d{1,3})%)?\s*\]\)$/;
+var MEMORIAL_SIZE = 46, MEMORIAL_MIN = 15, MEMORIAL_WIDE = 70;
+
+// A photo's size (% of the text's width), kept within MEMORIAL_MIN..100.
+function memorialSize(n) {
+  n = Math.round(Number(n));
+  return isFinite(n) && n > 0 ? Math.max(MEMORIAL_MIN, Math.min(100, n)) : MEMORIAL_SIZE;
+}
+
+// Sizes a photo's figure: --w for the CSS, and centred on its own when wide.
+function sizeMemorialPhoto(fig, size) {
+  fig.style.setProperty("--w", size);
+  fig.classList.toggle("is-wide", size >= MEMORIAL_WIDE);
+}
 
 function memorialBlocks(text) {
   return String(text || "").replace(/\r\n?/g, "\n").split(/\n\s*\n/)
     .map(function (p) { return p.trim(); }).filter(Boolean)
-    .map(function (p) {
+    .map(function (p, n) {
       var m = MEMORIAL_PHOTO.exec(p);
-      if (m) return { kind: "photo", file: m[2], caption: m[1].trim() };
+      if (m) return { kind: "photo", n: n, file: m[2], caption: m[1].trim(), size: memorialSize(m[3]), sized: !!m[3] };
       if (/^#\s/.test(p)) return { kind: "heading", text: p.replace(/^#\s+/, "") };
       return { kind: "para", text: p };
     });
@@ -44,7 +61,9 @@ function renderMemorial(text, container, opts) {
     var el;
     if (b.kind === "photo") {
       el = document.createElement("figure");
-      el.className = "memorial-photo " + (side++ % 2 ? "is-left" : "is-right");
+      el.className = "memorial-photo " + (side % 2 ? "is-left" : "is-right");
+      if (b.size < MEMORIAL_WIDE) side++; // centred ones don't take a turn
+      sizeMemorialPhoto(el, b.size);
       var img = document.createElement("img");
       img.alt = b.caption || "";
       img.onload = function () { el.classList.add("is-loaded"); };
@@ -57,7 +76,7 @@ function renderMemorial(text, container, opts) {
       }
       var url = dir + encodeURIComponent(b.file);
       if (opts.setSrc) opts.setSrc(img, url); else img.src = url;
-      if (opts.onPhoto) opts.onPhoto(el, url, b.caption);
+      if (opts.onPhoto) opts.onPhoto(el, url, b.caption, b);
     } else {
       el = document.createElement(b.kind === "heading" ? "h3" : "p");
       memorialInline(b.text, el);

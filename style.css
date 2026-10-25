@@ -220,10 +220,15 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
   margin-top: 10px; font-size: 15px; line-height: 1.45; font-style: italic;
   color: #6B5748; text-align: center; text-wrap: balance;
 }
+/* --w is its size from memorial.txt, in % of the text's width (twice that
+   on phones, where the column is narrow); .is-wide ones (70%+) sit centred
+   on their own line. */
+.memorial-photo { width: min(100%, calc(var(--w, 46) * 2%)); margin-left: auto; margin-right: auto; }
 @media (min-width: 700px) {
-  .memorial-photo { width: 46%; margin-bottom: 14px; }
-  .memorial-photo.is-right { float: right; margin-left: 32px; }
-  .memorial-photo.is-left { float: left; margin-right: 32px; }
+  .memorial-photo { width: calc(var(--w, 46) * 1%); margin-bottom: 14px; }
+  .memorial-photo.is-right:not(.is-wide) { float: right; margin-left: 32px; margin-right: 0; }
+  .memorial-photo.is-left:not(.is-wide) { float: left; margin-right: 32px; margin-left: 0; }
+  .memorial-photo.is-wide { clear: both; }
   .dedication::after { content: ""; display: block; clear: both; }
 }
 
