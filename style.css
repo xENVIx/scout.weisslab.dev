@@ -206,6 +206,11 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
   font-style: italic; color: #33271F; text-wrap: balance;
 }
 .dedication > h3:not(:first-child) { margin-top: clamp(40px, 6vw, 60px); }
+/* index.html's copy of the text is only the no-JS fallback (and an old
+   version): hidden until script.js has put in media/memorial.txt's. */
+.js #dedication:not(.is-ready) { visibility: hidden; }
+/* Blank (just the paper colour) until script.js has the scenes set up. */
+html.is-loading body > * { visibility: hidden !important; }
 /* The photos in it are styled in memorial.css. */
 @media (min-width: 700px) {
   .dedication::after { content: ""; display: block; clear: both; }

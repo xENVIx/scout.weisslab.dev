@@ -26,6 +26,15 @@
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..600;1,6..72,200..600&family=Karla:wght@400;500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="style.css" />
 <link rel="stylesheet" href="memorial.css" />
+<script>
+/* Before script.js (at the end of the page) sets up the scenes, the page
+   would draw as one long scrolling page, the no-JS fallback. "is-loading"
+   keeps it blank until then (script.js removes it; this does after 4s in
+   case script.js never runs). "js" hides the old memorial text until the
+   current one is in (style.css). */
+document.documentElement.classList.add("js", "is-loading");
+setTimeout(function () { document.documentElement.classList.remove("is-loading"); }, 4000);
+</script>
 </head>
 <body>
 

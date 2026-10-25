@@ -74,7 +74,7 @@ var clipQueue = Promise.resolve();
   var list = Array.prototype.slice.call(document.querySelectorAll(".scene"));
   var sidenav = document.getElementById("sidenav");
   var lightbox = document.getElementById("lightbox");
-  if (list.length < 2) return;
+  if (list.length < 2) return document.documentElement.classList.remove("is-loading");
 
   var SHIFT = 24;          // px of vertical drift during the fade
   var LOCK_MS = 1000;      // ignore further input while a fade runs
@@ -369,6 +369,7 @@ var clipQueue = Promise.resolve();
   list.forEach(function (el) { el.style.transition = "none"; });
   activate(start, 1, true);
   list.forEach(function (el) { void el.offsetWidth; el.style.transition = ""; });
+  document.documentElement.classList.remove("is-loading"); // see index.html
 
   window.addEventListener("wheel", function (e) {
     if (busy()) return;
@@ -1231,7 +1232,12 @@ function windowDots(wrap, dots, current) {
    lightbox when clicked, and are left out if the file is gone. */
 (function memorialText() {
   var section = document.getElementById("dedication");
-  if (!section || typeof renderMemorial !== "function") return;
+  if (!section) return;
+  // Until then the fallback copy is hidden (.js in style.css); shown after
+  // all if the file can't be had, or takes over 4s.
+  function ready() { section.classList.add("is-ready"); }
+  var giveUp = setTimeout(ready, 4000);
+  if (typeof renderMemorial !== "function") return ready();
   fetch("media/memorial.txt", { cache: "no-cache" })
     .then(function (r) { return r.ok ? r.text() : ""; })
     .then(function (t) {
@@ -1246,7 +1252,8 @@ function windowDots(wrap, dots, current) {
         }
       });
     })
-    .catch(function () {});
+    .catch(function () {})
+    .then(function () { clearTimeout(giveUp); ready(); });
 })();
 
 /* Messages: visitors leave a note for Scout, up to MAX_FILES photos, GIFs
