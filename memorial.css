@@ -2,10 +2,10 @@
    (memorial.js). Loaded by index.html and by the preview at /media-admin,
    so both look the same.
 
-   Size: --w is the photo's size in % of the text's width (twice that on
-   phones, where the column is narrow). On wide screens a photo floats
-   beside the paragraphs after it, alternating right and left; .is-wide
-   ones (70%+) sit centred on their own line.
+   Size: --w is the photo's size in % of the text's width, on a phone too
+   (but never under 110px). A photo floats beside the paragraphs after it,
+   alternating right and left; .is-wide ones (70%+; on a phone
+   .is-wide-phone, 50%+) sit centred on their own line.
    Frame: .frame-outline (the default: a thin line offset behind it, like
    the photo on the first page, mirrored toward the text), .frame-print (a
    cream print with a soft shadow, slightly tilted), .frame-mat (a fine line
@@ -13,7 +13,7 @@
    A photo fades in once loaded; a missing one is left out. */
 .memorial-photo {
   box-sizing: border-box; margin-left: auto; margin-right: auto;
-  width: min(100%, calc(var(--w, 46) * 2%));
+  width: min(100%, max(calc(var(--w, 46) * 1%), 110px));
   opacity: 0; transition: opacity 900ms ease;
 }
 .memorial-photo.is-loaded { opacity: 1; }
@@ -52,8 +52,19 @@
 
 .frame-none img { box-shadow: 0 10px 30px rgba(64,42,25,.14); }
 
+@media (max-width: 699px) {
+  .memorial-photo.is-right:not(.is-wide-phone) { float: right; margin-left: 18px; margin-right: 0; margin-bottom: 10px; }
+  .memorial-photo.is-left:not(.is-wide-phone) { float: left; margin-right: 18px; margin-left: 0; margin-bottom: 10px; }
+  .memorial-photo.is-wide-phone { clear: both; }
+  .frame-outline.is-right:not(.is-wide-phone) .mp-frame::before { inset: 10px 8px -10px -8px; }
+  .frame-outline.is-left:not(.is-wide-phone) .mp-frame::before { inset: 10px -8px -10px 8px; }
+  .frame-outline:not(.is-wide-phone) { margin-bottom: 20px; }
+  .frame-outline:not(.is-wide-phone) figcaption { margin-top: 18px; }
+  .dedication::after { content: ""; display: block; clear: both; }
+  .memorial-photo figcaption { font-size: 13px; }
+}
 @media (min-width: 700px) {
-  .memorial-photo { width: calc(var(--w, 46) * 1%); margin-bottom: 14px; }
+  .memorial-photo { margin-bottom: 14px; }
   .memorial-photo.is-right:not(.is-wide) { float: right; margin-left: 32px; margin-right: 0; }
   .memorial-photo.is-left:not(.is-wide) { float: left; margin-right: 32px; margin-left: 0; }
   .memorial-photo.is-wide { clear: both; }

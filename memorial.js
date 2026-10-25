@@ -18,7 +18,7 @@
    uses it to load lazily), opts.onPhoto(fig, url, caption, block) hooks
    clicks (block.n is its paragraph's place among the non-blank ones). */
 var MEMORIAL_PHOTO = /^\(([^\[\]]*)\[\s*<?([^\[\]<>\/\\]+?)>?(?:\s+(\d{1,3})%)?(?:\s+(outline|print|mat|none))?\s*\]\)$/i;
-var MEMORIAL_SIZE = 46, MEMORIAL_MIN = 15, MEMORIAL_WIDE = 70;
+var MEMORIAL_SIZE = 46, MEMORIAL_MIN = 15, MEMORIAL_WIDE = 70, MEMORIAL_WIDE_PHONE = 50;
 var MEMORIAL_FRAMES = ["outline", "print", "mat", "none"], MEMORIAL_FRAME = "outline";
 
 // A photo's line: size 0 or the default, and the default frame, are left out.
@@ -33,10 +33,12 @@ function memorialSize(n) {
   return isFinite(n) && n > 0 ? Math.max(MEMORIAL_MIN, Math.min(100, n)) : MEMORIAL_SIZE;
 }
 
-// Sizes a photo's figure: --w for the CSS, and centred on its own when wide.
+// Sizes a photo's figure: --w for the CSS, and centred on its own when wide
+// (.is-wide on a computer; .is-wide-phone on a phone, where the column is narrower).
 function sizeMemorialPhoto(fig, size) {
   fig.style.setProperty("--w", size);
   fig.classList.toggle("is-wide", size >= MEMORIAL_WIDE);
+  fig.classList.toggle("is-wide-phone", size >= MEMORIAL_WIDE_PHONE);
 }
 
 function memorialBlocks(text) {
