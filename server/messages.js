@@ -406,7 +406,6 @@ function importFile(m, f, opts, cb) {
     var q = new URLSearchParams({
       name: "visitor-" + day + "-" + m.id.slice(0, 6) + (filesOf(m).length > 1 ? "-" + (n + 1) : "") + "." + t.ext,
       gallery: opts.gallery ? "1" : "",
-      slideshow: opts.slideshow ? "1" : "",
       moments: opts.moments ? "1" : "",
       caption: opts.caption || ""
     });
@@ -437,14 +436,12 @@ function adminPage(res, msg) {
     var files = filesOf(m);
     return files.map(function (f, n) {
       var url = "/messages-admin/file/" + encodeURIComponent(m.id) + "/" + n;
-      var moving = f.kind === "video" || fileType(f).ext === "gif";
       var ids = '<input type="hidden" name="id" value="' + esc(m.id) + '"><input type="hidden" name="file" value="' + esc(f.file) + '">';
       var copy = f.imported
         ? '<p class="done">Copied to your media as <b>' + esc(f.imported) + '</b>. Tick it in the <a href="/media-admin">media manager</a> to change where it shows.</p>'
         : '<form method="post" class="copy">' + ids + '<input type="hidden" name="action" value="import">' +
           '<label><input type="checkbox" name="gallery" value="1" checked> Gallery</label>' +
-          (moving ? '<label><input type="checkbox" name="moments" value="1"> Moments</label>'
-                  : '<label><input type="checkbox" name="slideshow" value="1"> Slideshow</label>') +
+          '<label><input type="checkbox" name="moments" value="1"> Moments</label>' +
           (m.text && m.text.length <= MAX_CAPTION ? '<label><input type="checkbox" name="caption" value="1"> Use their message as the caption</label>' : '') +
           '<button>Copy to my media</button></form>';
       var remove = files.length > 1 || m.text
@@ -500,7 +497,7 @@ function adminAction(req, res) {
     if (body.action === "import") {
       if (!f) return done("That file is gone.");
       var caption = body.caption && m.text && m.text.length <= MAX_CAPTION ? m.text.replace(/\s+/g, " ") : "";
-      return importFile(m, f, { gallery: !!body.gallery, slideshow: !!body.slideshow, moments: !!body.moments, caption: caption }, function (err, name) {
+      return importFile(m, f, { gallery: !!body.gallery, moments: !!body.moments, caption: caption }, function (err, name) {
         if (err) return done(err);
         f.imported = name;
         save();

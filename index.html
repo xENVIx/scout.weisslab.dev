@@ -40,7 +40,7 @@ setTimeout(function () { document.documentElement.classList.remove("is-loading")
 <nav class="sidenav" id="sidenav" aria-label="Section navigation">
   <a href="#top" class="to-top"><span aria-hidden="true">&uarr;</span> Top</a>
   <a href="#dedication">Memorial</a>
-  <a href="#slideshow">Slideshow</a>
+  <a href="#memories">Memories</a>
   <a href="#moments">Moments</a>
   <a href="#gallery">Gallery</a>
   <a href="#messages">Messages</a>
@@ -49,7 +49,7 @@ setTimeout(function () { document.documentElement.classList.remove("is-loading")
 <div class="scene" id="top" data-anchor="">
 <nav class="topnav" id="topnav" aria-label="Section navigation">
   <a href="#dedication">Memorial</a>
-  <a href="#slideshow">Slideshow</a>
+  <a href="#memories">Memories</a>
   <a href="#moments">Moments</a>
   <a href="#gallery">Gallery</a>
   <a href="#messages">Messages</a>
@@ -74,15 +74,24 @@ setTimeout(function () { document.documentElement.classList.remove("is-loading")
 <section class="narrow dedication" id="dedication"><!-- filled from media/memorial.txt by script.js --></section>
 </div>
 
-<div class="scene" data-anchor="slideshow">
-<div class="band" id="slideshow">
+<div class="scene" data-anchor="memories">
+<section class="mid section" id="memories">
+  <div class="head">
+    <h2>Memories</h2>
+  </div>
+  <div class="memory-grid" id="memory-grid"></div>
+</section>
+</div>
+
+<div class="scene" data-anchor="moments">
+<div class="band" id="moments">
   <div class="mid band-inner">
     <div class="head">
       <h2></h2>
       <div class="ss-count" id="slideshow-count">&nbsp;</div>
     </div>
 
-    <div id="slideshow-stage" aria-roledescription="carousel" aria-label="Photos and videos of Scout"></div>
+    <div id="slideshow-stage" aria-roledescription="carousel" aria-label="Moments: photos and videos of Scout"></div>
     <p class="ss-caption" id="slideshow-caption" aria-live="polite"></p>
 
     <div class="ss-controls">
@@ -97,41 +106,6 @@ setTimeout(function () { document.documentElement.classList.remove("is-loading")
     <p class="ss-hint">Arrow keys, or swipe on a phone.</p>
   </div>
 </div>
-</div>
-
-<div class="scene" data-anchor="moments">
-<section class="mid section" id="moments">
-  <div class="head">
-    <!--<h2>The catch</h2>-->
-    <!--<span class="label">Slow motion</span>-->
-  </div>
-  <div class="moments-list" id="moments-list">
-    <div class="video-shell" id="video-shell">
-      <video id="frisbee" src="media/scout_good_catch.mp4" playsinline loop muted controls preload="none"></video>
-      <button class="sound" id="catch-sound" type="button" aria-pressed="false">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 6v4h2.5l3.5 3V3L5 6H2.5Z" fill="currentColor"/><path class="waves" d="M10.6 5.6a3.4 3.4 0 0 1 0 4.8M12.4 3.8a6 6 0 0 1 0 8.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path class="cross" d="m10.5 6 3.5 4m0-4-3.5 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-        <span>Tap for sound</span>
-      </button>
-      <div class="video-missing">
-        <div>
-          <p>Oops, there was supposed to be a video here.</p>
-          <small>Something went wrong loading it. Try refreshing the page.</small>
-        </div>
-      </div>
-    </div>
-  </div>
-  <!--<p class="caption">He never once doubted that the frisbee was coming back.</p>-->
-  <p class="caption" id="moments-caption" aria-live="polite">Scout doing what he loved</p>
-  <div class="ss-controls" id="moments-controls" hidden>
-    <button class="ss-arrow" type="button" id="moments-prev" aria-label="Previous moment">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 2.5 4.5 8l5.5 5.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
-    <div class="ss-dots" id="moments-dots"></div>
-    <button class="ss-arrow" type="button" id="moments-next" aria-label="Next moment">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 2.5 11.5 8 6 13.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
-  </div>
-</section>
 </div>
 
 <div class="scene" data-anchor="gallery">
@@ -178,6 +152,22 @@ setTimeout(function () { document.documentElement.classList.remove("is-loading")
     <div class="eyebrow">Sorely missed</div>
   </div>
 </footer>-->
+
+<div class="memory-view" id="memory-view" hidden>
+  <div class="mv-card" role="dialog" aria-modal="true" aria-labelledby="mv-title">
+    <button class="mv-close" id="mv-close" type="button" aria-label="Close">&times;</button>
+    <div class="mv-photo" id="mv-photo"></div>
+    <div class="mv-body">
+      <h3 class="mv-title" id="mv-title"></h3>
+      <div class="mv-text" id="mv-text"></div>
+    </div>
+    <div class="mv-nav">
+      <button type="button" id="mv-prev"><span aria-hidden="true">&larr;</span> Previous</button>
+      <span class="mv-count" id="mv-count"></span>
+      <button type="button" id="mv-next">Next <span aria-hidden="true">&rarr;</span></button>
+    </div>
+  </div>
+</div>
 
 <div class="lightbox" id="lightbox" hidden>
   <button class="lightbox-close" id="lightbox-close" type="button" aria-label="Close">&times;</button>

@@ -15,19 +15,20 @@
    streamed straight to disk, one file per request, with the file as the raw
    request body. Each file also has two checkboxes, kept as plain lists the
    page reads (one filename per line): not_in_gallery.txt names images left
-   out of the gallery (every image is in it unless listed), slideshow.txt names files in
-   the slideshow (nothing is unless listed). GIFs and videos get a third,
-   moments.txt, the ones shown in the Moments section. A GIF can also be
+   out of the gallery (every image is in it unless listed), slideshow.txt
+   names the photos, GIFs and videos in the Moments section's stack (the
+   "Moments" checkbox; nothing is unless listed). A GIF can also be
    picked as the transition between two sections, one GIF per transition,
    or put in the "Random" pool, which the page draws from for every
    transition without its own: transitions.txt, "<from>><to>=<file>" and
    "random=<file>" lines (script.js reads it).
    memorial.txt is the Memorial
    section's text, edited in a box at the bottom of the page (paragraphs
-   separated by blank lines). captions.txt holds each file's optional
+   separated by blank lines). memories.json is the Memories section, a list
+   of {title, text, photo}, edited in its own box. captions.txt holds each file's optional
    caption ("<file>=<caption>"), and order.txt the display order the owner
    set by dragging (files it doesn't name follow, by filename). settings.txt
-   holds "slide_seconds=<n>", how long each photo shows in the slideshow.
+   holds "slide_seconds=<n>", how long each photo shows in Moments.
    /internal/import takes a visitor's photo or video from the messages server
    (server/messages.js), straight from 127.0.0.1 with IMPORT_TOKEN; nginx
    never passes that path on, and anything it does pass carries X-Real-IP.
@@ -56,7 +57,7 @@ var ADMIN_PAGES = ["/admin", "/media-admin", "/messages-admin"];
 var MEDIA_ROOT = process.env.MEDIA_ROOT || path.join(__dirname, "..", "media");
 
 var MAX_UPLOAD = 1024 * 1024 * 1024; // 1 GB per file
-var MAX_FORM = 64 * 1024;
+var MAX_FORM = 2 * 1024 * 1024; // the memories editor sends all of them at once
 var MAX_MEMORIAL = 20000; // characters
 var SESSION_MS = 30 * 24 * 60 * 60e3; // stay signed in for 30 days
 var LOGIN_LIMIT = 10;                 // wrong passwords per visitor...
@@ -75,18 +76,19 @@ var MEMORIAL_FILE = "memorial.txt";
 // anywhere in it: the same as MEMORIAL_TAG in /memorial.js, which draws
 // the page and the preview here.
 var MEMORIAL_TAG = /\(([^()\[\]\n]*)\[\s*<?([^\[\]<>\/\\\n]+?)>?(?:\s+(\d{1,3})%)?(?:\s+(outline|print|mat|none))?\s*\]\)/gi;
-var ROLES = { intro: "the intro photo", "catch": "the Moments video when none are ticked" };
+var ROLES = { intro: "the intro photo" };
 var GALLERY_OUT_LIST = "not_in_gallery.txt";
-var SLIDES_LIST = "slideshow.txt";
-var MOMENTS_LIST = "moments.txt";
-var MOMENT_EXT = /\.(gif|mp4|webm|mov|m4v)$/i;
+var SLIDES_LIST = "slideshow.txt"; // what's in Moments (once "the slideshow")
+var OLD_MOMENTS_LIST = "moments.txt"; // GIFs and videos, before Moments and the slideshow became one; merged into SLIDES_LIST on start
+var MEMORIES_FILE = "memories.json";
+var MAX_MEMORIES = 100, MAX_MEMORY_TITLE = 120, MAX_MEMORY_TEXT = 6000; // characters
 var TRANSITIONS_FILE = "transitions.txt";
 // The page's sections in order, by their data-anchor (the intro's id is
 // "top"); a transition plays between one and the next, either way.
 var TRANSITIONS = [
   ["top>dedication", "First page ↔ Memorial"],
-  ["dedication>slideshow", "Memorial ↔ Slideshow"],
-  ["slideshow>moments", "Slideshow ↔ Moments"],
+  ["dedication>memories", "Memorial ↔ Memories"],
+  ["memories>moments", "Memories ↔ Moments"],
   ["moments>gallery", "Moments ↔ Gallery"],
   ["gallery>messages", "Gallery ↔ Messages"]
 ];
@@ -97,7 +99,7 @@ var SETTINGS_FILE = "settings.txt";
 var DEFAULT_SLIDE_SECONDS = 5; // script.js uses the same default
 var MAX_SLIDE_SECONDS = 120;
 // Kept in media/ for the page to read, but not media themselves.
-var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, MOMENTS_LIST, TRANSITIONS_FILE, PAGE_LIST, MEMORIAL_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
+var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, OLD_MOMENTS_LIST, MEMORIES_FILE, TRANSITIONS_FILE, PAGE_LIST, MEMORIAL_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
 
 // ---- names and paths ----
 
@@ -125,7 +127,7 @@ function naturalCompare(a, b) {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
-// The order the slideshow and gallery use: files named in ORDER_LIST first,
+// The order Moments and the gallery use: files named in ORDER_LIST first,
 // in its order, then the rest by filename.
 function displayCompare(order) {
   return function (a, b) {
@@ -202,6 +204,39 @@ function writeCaptions(caps) {
     .map(function (f) { return f + "=" + caps[f] + "\n"; }).join(""));
 }
 
+// The Memories section: [{ title, text, photo }], photo a file in media/ or "".
+function readMemories() {
+  try {
+    var list = JSON.parse(fs.readFileSync(filePath(MEMORIES_FILE), "utf8"));
+    return Array.isArray(list) ? list : [];
+  } catch (e) { if (e.code !== "ENOENT") console.error(e); return []; }
+}
+function writeMemories(list) {
+  writeFile(MEMORIES_FILE, JSON.stringify(list, null, 2) + "\n");
+}
+
+// Once, on start, after Moments and the slideshow became one section and
+// Memories came in after the Memorial: the old Moments list joins the
+// slideshow list (now Moments), and the transitions move to the new
+// section boundaries.
+function migrate() {
+  try {
+    if (fs.existsSync(filePath(OLD_MOMENTS_LIST))) {
+      writeList(SLIDES_LIST, readList(SLIDES_LIST).concat(readList(OLD_MOMENTS_LIST)));
+      fs.unlinkSync(filePath(OLD_MOMENTS_LIST));
+      console.log("migrate: merged " + OLD_MOMENTS_LIST + " into " + SLIDES_LIST);
+    }
+    var t = readTransitions(), moved = false;
+    [["dedication>slideshow", "memories>moments"], ["slideshow>moments", "moments>gallery"]].forEach(function (m) {
+      if (!t[m[0]]) return;
+      if (!t[m[1]]) t[m[1]] = t[m[0]];
+      delete t[m[0]];
+      moved = true;
+    });
+    if (moved) { writeTransitions(t); console.log("migrate: moved transitions to the new sections"); }
+  } catch (e) { console.error("migrate:", e); }
+}
+
 // Put file on the named list (on) or take it off.
 function setFlag(name, file, on) {
   var list = readList(name).filter(function (f) { return f !== file; });
@@ -238,10 +273,11 @@ function renamePageFile(file, to) {
   writeFile(PAGE_LIST, Object.keys(roles).map(function (r) { return r + "=" + roles[r] + "\n"; }).join(""));
 }
 
-// After a delete (or rename), drop the old name from the lists, captions and
-// order (or carry its ticks, caption and place over to the new name).
+// After a delete (or rename), drop the old name from the lists, captions,
+// order, transitions, memories and memorial text (or carry it all over to
+// the new name).
 function forgetFile(file, renamedTo) {
-  [GALLERY_OUT_LIST, SLIDES_LIST, MOMENTS_LIST].forEach(function (name) {
+  [GALLERY_OUT_LIST, SLIDES_LIST].forEach(function (name) {
     var list = readList(name);
     if (list.indexOf(file) < 0) return;
     setFlag(name, file, false);
@@ -271,6 +307,9 @@ function forgetFile(file, renamedTo) {
     delete caps[file];
     writeCaptions(caps);
   }
+  var memories = readMemories(), changed = false;
+  memories.forEach(function (m) { if (m.photo === file) { m.photo = renamedTo || ""; changed = true; } });
+  if (changed) writeMemories(memories);
   var memorial = "";
   try { memorial = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8"); } catch (e) { if (e.code !== "ENOENT") throw e; }
   var tagged = false;
@@ -495,8 +534,8 @@ function upload(req, res, query) {
 }
 
 // A visitor's photo from the messages server: the file is the raw body, and
-// the query names it and says where it goes (gallery, slideshow, moments,
-// caption). A name that's taken gets -2, -3... added.
+// the query names it and says where it goes (gallery, moments, caption;
+// "slideshow" is an old name for moments). A name that's taken gets -2, -3... added.
 function importFromMessages(req, res, query) {
   var token = String(req.headers["x-import-token"] || "");
   if (!IMPORT_TOKEN || req.headers["x-real-ip"] || !crypto.timingSafeEqual(sha(token), sha(IMPORT_TOKEN))) return send(res, 403, "Forbidden");
@@ -522,8 +561,7 @@ function importFromMessages(req, res, query) {
     try {
       fs.renameSync(tmp, filePath(name));
       setFlag(GALLERY_OUT_LIST, name, query.get("gallery") !== "1");
-      if (MOMENT_EXT.test(name)) setFlag(MOMENTS_LIST, name, query.get("moments") === "1");
-      else setFlag(SLIDES_LIST, name, query.get("slideshow") === "1");
+      setFlag(SLIDES_LIST, name, query.get("moments") === "1" || query.get("slideshow") === "1");
       var caption = String(query.get("caption") || "").replace(/\s+/g, " ").trim().slice(0, MAX_CAPTION);
       if (caption) { var caps = readCaptions(); caps[name] = caption; writeCaptions(caps); }
     } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save the file." }); }
@@ -552,6 +590,27 @@ function action(req, res) {
       }
       return send(res, 303, "", { Location: "/media-admin?msg=" + encodeURIComponent(msg) + "#memorial" });
     }
+    // The memories editor saves them all at once and gets JSON back.
+    if (f.action === "memories") {
+      var list;
+      try { list = JSON.parse(f.data || ""); } catch (e) { list = null; }
+      if (!Array.isArray(list)) return json(res, 400, { error: "That didn’t come through right; try again." });
+      if (list.length > MAX_MEMORIES) return json(res, 400, { error: "That’s more than " + MAX_MEMORIES + " memories." });
+      var clean = [], tooLong = null;
+      list.forEach(function (m, i) {
+        m = m || {};
+        var title = String(m.title || "").replace(/\s+/g, " ").trim().slice(0, MAX_MEMORY_TITLE);
+        var text = String(m.text || "").replace(/\r\n?/g, "\n").split(/\n\s*\n/)
+          .map(function (p) { return p.replace(/[ \t]+\n/g, "\n").trim(); }).filter(Boolean).join("\n\n");
+        var photo = String(m.photo || "");
+        if (photo && (!validFile(photo) || !fs.existsSync(filePath(photo)))) photo = "";
+        if (text.length > MAX_MEMORY_TEXT) tooLong = tooLong || "Memory " + (i + 1) + " is too long (" + MAX_MEMORY_TEXT + " characters max).";
+        if (title || text || photo) clean.push({ title: title, text: text, photo: photo });
+      });
+      if (tooLong) return json(res, 400, { error: tooLong });
+      try { writeMemories(clean); } catch (e) { console.error(e); return json(res, 500, { error: "Couldn’t save: " + e.code }); }
+      return json(res, 200, { ok: true, count: clean.length });
+    }
     if (f.action === "settings") {
       var secs = Number(f.slide_seconds);
       if (!(secs >= 1 && secs <= MAX_SLIDE_SECONDS)) msg = "Pick a number of seconds from 1 to " + MAX_SLIDE_SECONDS + ".";
@@ -569,9 +628,7 @@ function action(req, res) {
       if (!exists) return json(res, 400, { error: "That file is gone." });
       try {
         setFlag(GALLERY_OUT_LIST, f.file, f.gallery !== "1");
-        // GIFs and videos go in Moments, never the slideshow.
-        setFlag(SLIDES_LIST, f.file, f.slideshow === "1" && !MOMENT_EXT.test(f.file));
-        if (MOMENT_EXT.test(f.file)) setFlag(MOMENTS_LIST, f.file, f.moments === "1");
+        setFlag(SLIDES_LIST, f.file, f.moments === "1");
       } catch (e) { console.error(e); return json(res, 500, { error: "Couldn't save." }); }
       return json(res, 200, { ok: true });
     }
@@ -677,11 +734,12 @@ function hubPage(res, msg) {
       card("/messages-admin", "Messages", waiting === null ? "Approve, hide or delete what visitors leave, and copy their photos into your media."
         : waiting ? waiting + " waiting for approval. Approve, hide or delete them, and copy their photos into your media." : "Nothing waiting. Approve, hide or delete what visitors leave, and copy their photos into your media.", waiting || "") +
       '<h2>Photos and videos</h2>' +
-      card("/media-admin", "Media manager", "Upload, rename and delete files; pick what goes in the gallery, slideshow and Moments; captions, order and transitions.") +
+      card("/media-admin", "Media manager", "Upload, rename and delete files; pick what goes in Moments and the gallery; captions, order and transitions.") +
       '<div class="sub">' +
       card("/media-admin#title-photo", "Title page photo", "The big photo on the first page.") +
-      card("/media-admin#slideshow", "Slideshow timing", "How long each photo shows.") +
       card("/media-admin#memorial", "Memorial text", "The words in the Memorial section.") +
+      card("/media-admin#memories", "Memories", "The little stories in the Memories section, each with a photo.") +
+      card("/media-admin#slideshow", "Moments timing", "How long each photo shows in Moments.") +
       '</div>' +
       '<h2>You</h2>' +
       card("/admin/password", "Change password", "Set your own password for signing in to these pages.") +
@@ -706,7 +764,6 @@ function adminPage(req, res, query) {
   var msg = query.get("msg");
   var galleryOut = readList(GALLERY_OUT_LIST);
   var slidesList = readList(SLIDES_LIST);
-  var momentsList = readList(MOMENTS_LIST);
   var transitions = readTransitions();
   var intro = pageFiles().intro || "";
   var photos = files.map(function (f) { return f.name; }).filter(function (n) { return PHOTO_EXT.test(n); });
@@ -726,7 +783,7 @@ function adminPage(req, res, query) {
       '<a class="thumb" href="' + esc(url) + '" target="_blank">' + thumb + '</a>' +
       '<div class="info"><div class="name">' + esc(f.name) + '</div><div class="meta">' + fmtSize(f.size) +
       ' · <span class="where"></span>' + (inUse ? ' · <b>' + esc(inUse) + '</b>' : '') + '</div>' +
-      flagBoxes(f.name, galleryOut.indexOf(f.name) < 0, slidesList.indexOf(f.name) >= 0, momentsList.indexOf(f.name) >= 0) +
+      flagBoxes(f.name, galleryOut.indexOf(f.name) < 0, slidesList.indexOf(f.name) >= 0) +
       (GIF_EXT.test(f.name) ? transitionPicker(f.name, transitions) : '') +
       '<div class="row"><input class="caption" value="' + esc(captions[f.name] || "") + '" maxlength="' + MAX_CAPTION + '" placeholder="Caption (optional)" aria-label="Caption for ' + esc(f.name) + '"></div>' +
       '<form method="post" class="row">' + hidden + '<input type="hidden" name="action" value="rename">' +
@@ -749,8 +806,8 @@ function adminPage(req, res, query) {
   };
   var toggle = files.length ? '<div class="view">' + viewLink("type", "By type") + viewLink("order", "Display order") + '</div>' : '';
 
-  var note = '<p class="hint"><b>Gallery</b> puts a file in the gallery grid; <b>Slideshow</b> (photos) puts it in the slideshow; <b>Moments</b> (GIFs and videos) puts it in the Moments section, a stack that moves on by itself: a video after it plays once, a GIF after four plays. A GIF\'s <b>Transition</b> plays it once when moving between two sections (either way, or jumping there with the menu); each transition can have one GIF, and one already taken is greyed out. <b>Random</b> puts a GIF in a pool: every transition without its own GIF plays one from it, picked at random. Visitors can skip a transition by scrolling, tapping or pressing a key. New uploads are in the gallery but not the slideshow, and go at the end. ' +
-    'To change the order, switch to <b>Display order</b> and drag a file to its new place (by its ⠿ handle on a phone). A caption shows under the photo in the slideshow and the enlarged view.</p>';
+  var note = '<p class="hint"><b>Moments</b> puts a photo, GIF or video in the Moments section, a stack that moves on by itself: a photo after its time (set under Moments timing), a GIF after four plays, a video after it plays once. <b>Gallery</b> puts it in the gallery grid. A GIF\'s <b>Transition</b> plays it once when moving between two sections (either way, or jumping there with the menu); each transition can have one GIF, and one already taken is greyed out. <b>Random</b> puts a GIF in a pool: every transition without its own GIF plays one from it, picked at random. Visitors can skip a transition by scrolling, tapping or pressing a key. New uploads are in the gallery but not Moments, and go at the end. ' +
+    'To change the order, switch to <b>Display order</b> and drag a file to its new place (by its ⠿ handle on a phone). A caption shows under it in Moments and in the enlarged view.</p>';
 
   var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<title>Scout media</title><style>' +
@@ -802,6 +859,13 @@ function adminPage(req, res, query) {
     '.seg{display:inline-flex;gap:4px}.seg button{padding:6px 12px}.seg button[aria-pressed=true],.frames button[aria-pressed=true]{background:#A8571F;border-color:#A8571F;color:#FFF8EC}' +
     '.pv-box{position:relative;overflow:hidden;border:1px solid #DBC8AE;border-radius:6px;background:#E9DECD}.pv-box iframe{position:absolute;top:0;border:0;transform-origin:0 0;background:#FAF4EA;box-shadow:0 0 0 1px #DBC8AE}' +
     '.frames{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px}.frames button{padding:5px 10px;font-size:12px}.frames .lab{margin-right:4px}' +
+    '.mem{border:1px solid #DBC8AE;border-radius:6px;background:#FFFDF8;padding:12px;margin-bottom:12px;font:14px system-ui,sans-serif}' +
+    '.mem-top{display:flex;gap:12px;align-items:flex-start}.mem-photo{flex:none;width:96px;height:96px;padding:0;border-radius:6px;overflow:hidden;display:grid;place-items:center;background:#F3E8D8;font-size:12px;color:#6B5748}' +
+    '.mem-photo img{width:100%;height:100%;object-fit:cover;display:block}.mem-fields{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}' +
+    '.mem input.mem-title{width:100%;box-sizing:border-box;font:600 16px Georgia,serif;padding:6px 8px;border:1px solid #DBC8AE;border-radius:4px}' +
+    '.mem textarea{box-sizing:border-box;width:100%;min-height:120px;font:16px/1.55 Georgia,serif;padding:8px 10px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;resize:vertical;margin-top:8px}' +
+    '.mem-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.mem-tools button{padding:4px 10px;font-size:12px}.mem-num{color:#6B5748;font-weight:600;margin-right:auto}' +
+    '.mem .photo-pick{margin-top:8px}.nophoto{display:grid;place-items:center;aspect-ratio:1;border:1px dashed #DBC8AE;border-radius:3px;color:#6B5748}' +
     '.photo-edit .done{align-self:flex-start;padding:4px 10px;font-size:12px}' +
     '@media(max-width:520px){#photo-edit{gap:8px;padding:8px;align-items:flex-start}#photo-edit img{width:44px;height:44px}#photo-edit .size{margin-top:2px}.frames{gap:3px}.frames .lab{display:none}.frames button{padding:4px 8px}}' +
     // Sliders drawn here, not by the browser (its knob stops short of the end
@@ -819,7 +883,7 @@ function adminPage(req, res, query) {
     '.settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:15px system-ui,sans-serif}.settings input{width:80px;margin-left:8px}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
     '</style></head><body><main><form method="post" action="/admin/logout" class="out"><button>Sign out</button></form><p class="jump"><a href="/admin">← Admin</a></p><h1>Scout’s media</h1>' +
-    '<p class="jump"><a href="#title-photo">Title page photo ↓</a> · <a href="#slideshow">Slideshow timing ↓</a> · <a href="#memorial">Edit the memorial text ↓</a></p>' +
+    '<p class="jump"><a href="#title-photo">Title page photo ↓</a> · <a href="#slideshow">Moments timing ↓</a> · <a href="#memorial">Memorial text ↓</a> · <a href="#memories">Memories ↓</a></p>' +
     (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') +
     '<h2>Upload</h2>' +
     '<label class="drop" id="drop">Drop photos or videos here, or click to choose' +
@@ -834,7 +898,7 @@ function adminPage(req, res, query) {
     photos.map(function (n) { return '<option value="' + esc(n) + '"' + (n === intro ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join("") +
     '</select></label> <span class="saved" id="intro-saved" aria-live="polite"></span>' +
     '<p class="hint">It fills a tall frame, so the sides of a wide photo are cropped off; the preview shows how it will look.</p></div></div>' +
-    '<h2 id="slideshow">Slideshow</h2>' +
+    '<h2 id="slideshow">Moments timing</h2>' +
     '<form method="post" class="settings"><input type="hidden" name="action" value="settings">' +
     '<label>Seconds each photo shows <input type="number" name="slide_seconds" min="1" max="' + MAX_SLIDE_SECONDS + '" step="0.5" value="' + esc(slideSeconds()) + '" required></label> ' +
     '<button class="primary">Save</button></form>' +
@@ -859,19 +923,36 @@ function adminPage(req, res, query) {
     '<label class="size">Size <input type="range" id="photo-size" min="15" max="100" step="1" value="46"> <output id="photo-size-out">46%</output></label>' +
     frameButtonsHtml("photo-frames") +
     '<p class="hint">Tap a photo to add it where your cursor is.</p><div class="photo-grid">' +
-    files.filter(function (f) { return PHOTO_EXT.test(f.name) || /\.gif$/i.test(f.name); }).map(function (f) {
-      return '<button type="button" data-file="' + esc(f.name) + '" title="' + esc(f.name) + '"><img src="' + esc("/media/" + encodeURIComponent(f.name)) + '" loading="lazy" alt=""><span>' + esc(f.name) + '</span></button>';
-    }).join("") + '</div></div>' +
+    photoButtons(files) + '</div></div>' +
     '<textarea name="text" id="memorial-text" aria-label="Memorial text" maxlength="' + MAX_MEMORIAL + '">' + esc(memorial) + '</textarea>' +
     '<button class="primary">Save memorial text</button> <span class="saved" id="memorial-dirty" aria-live="polite"></span></form>' +
     '<div class="preview-head"><h3>Preview: how it looks on the site</h3><span class="seg" role="group" aria-label="Preview size">' +
     '<button type="button" data-view="computer">Computer</button><button type="button" data-view="phone">Phone</button></span></div>' +
     '<div class="pv-box" id="pv-box"><iframe id="memorial-frame" src="/memorial-preview.html" title="Preview of the Memorial section"></iframe></div>' +
     '<p class="hint">Tap a photo in the preview to pick it.</p>' +
+    '<h2 id="memories">Memories</h2>' +
+    '<p class="hint">The little stories in the Memories section: each one is a card with its photo and title, and opens to the whole story when tapped. ' +
+    'Blank lines separate paragraphs; **stars** make words bold, *one star* italic. Use the arrows to change the order. Nothing changes on the site until you press <b>Save memories</b>.</p>' +
+    '<div id="memories-editor" class="memories-editor"></div>' +
+    '<p><button type="button" id="mem-add">+ Add a memory</button></p>' +
+    '<p><button type="button" class="primary" id="mem-save">Save memories</button> <span class="saved" id="mem-saved" aria-live="polite"></span></p>' +
+    '<template id="mem-photos">' + photoGridHtml(files) + '</template>' +
+    '<script type="application/json" id="memories-data">' + JSON.stringify(readMemories()).replace(/</g, "\\u003c") + '</script>' +
     '</main><script src="/memorial.js"></script><script>(' + adminClient + ')();</script></body></html>';
   var headers = { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" };
   if (cookie) headers["Set-Cookie"] = cookie;
   send(res, 200, html, headers);
+}
+
+// A thumbnail button for each photo and GIF, for picking one (memorial text, memories).
+function photoButtons(files) {
+  return files.filter(function (f) { return PHOTO_EXT.test(f.name) || GIF_EXT.test(f.name); }).map(function (f) {
+    return '<button type="button" data-file="' + esc(f.name) + '" title="' + esc(f.name) + '"><img src="' + esc("/media/" + encodeURIComponent(f.name)) + '" loading="lazy" alt=""><span>' + esc(f.name) + '</span></button>';
+  }).join("");
+}
+function photoGridHtml(files) {
+  return '<div class="photo-pick mem-pick"><p class="hint">Tap a photo for this memory.</p><div class="photo-grid">' +
+    '<button type="button" data-file=""><span class="nophoto">No photo</span><span>No photo</span></button>' + photoButtons(files) + '</div></div>';
 }
 
 // The Frame buttons for a memorial photo (adminClient marks the current one).
@@ -897,12 +978,10 @@ function transitionPicker(file, transitions) {
     }).join("") + '</select></label><span class="saved" aria-live="polite"></span></div>';
 }
 
-function flagBoxes(file, gallery, slides, moments) {
+function flagBoxes(file, gallery, moments) {
   return '<div class="flags" data-file="' + esc(file) + '">' +
+    '<label><input type="checkbox" class="flag-moments"' + (moments ? ' checked' : '') + '> Moments</label>' +
     '<label><input type="checkbox" class="flag-gallery"' + (gallery ? ' checked' : '') + '> Gallery</label>' +
-    (MOMENT_EXT.test(file)
-      ? '<label><input type="checkbox" class="flag-moments"' + (moments ? ' checked' : '') + '> Moments</label>'
-      : '<label><input type="checkbox" class="flag-slides"' + (slides ? ' checked' : '') + '> Slideshow</label>') +
     '<span class="saved" aria-live="polite"></span></div>';
 }
 
@@ -921,32 +1000,30 @@ function adminClient() {
   }
 
   // Label each file with where it shows up, the way script.js picks:
-  // gallery, slideshow and moments = their ticked files, all in display order.
+  // Moments and gallery = their ticked files, in display order.
   function renumber() {
     var rows = Array.prototype.slice.call(document.querySelectorAll(".file[data-order]"));
     rows.sort(function (a, b) { return a.getAttribute("data-order") - b.getAttribute("data-order"); });
-    var slide = 0, galleryN = 0, momentN = 0;
+    var galleryN = 0, momentN = 0;
     rows.forEach(function (r) {
-      var where = r.querySelector(".where"), gallery = r.querySelector(".flag-gallery"), slides = r.querySelector(".flag-slides"), moments = r.querySelector(".flag-moments");
+      var where = r.querySelector(".where"), gallery = r.querySelector(".flag-gallery"), moments = r.querySelector(".flag-moments");
       if (!where) return;
       var parts = [];
-      if (slides && slides.checked) parts.push("Slide " + (++slide));
-      if (gallery && gallery.checked) parts.push("Gallery " + (++galleryN));
       if (moments && moments.checked) parts.push("Moment " + (++momentN));
+      if (gallery && gallery.checked) parts.push("Gallery " + (++galleryN));
       where.textContent = parts.length ? parts.join(" · ") : "Not on the page";
       where.className = parts.length ? "where" : "where off";
     });
   }
   renumber();
   document.querySelectorAll(".flags").forEach(function (box) {
-    var gallery = box.querySelector(".flag-gallery"), slides = box.querySelector(".flag-slides"), moments = box.querySelector(".flag-moments"), note = box.querySelector(".saved");
+    var gallery = box.querySelector(".flag-gallery"), moments = box.querySelector(".flag-moments"), note = box.querySelector(".saved");
     function save() {
       renumber();
-      report(note, post({ action: "flags", file: box.getAttribute("data-file"), gallery: gallery && gallery.checked ? "1" : "", slideshow: slides && slides.checked ? "1" : "", moments: moments && moments.checked ? "1" : "" }));
+      report(note, post({ action: "flags", file: box.getAttribute("data-file"), gallery: gallery && gallery.checked ? "1" : "", moments: moments && moments.checked ? "1" : "" }));
     }
-    if (gallery) gallery.addEventListener("change", save);
-    if (slides) slides.addEventListener("change", save);
-    if (moments) moments.addEventListener("change", save);
+    gallery.addEventListener("change", save);
+    moments.addEventListener("change", save);
   });
   // Transitions: one GIF each, so a choice greys that transition out in
   // every other GIF's menu (and frees up the one it had).
@@ -1301,6 +1378,128 @@ function adminClient() {
     });
   }
 
+  // The memories editor: one box per memory (photo, title, story), built
+  // from #memories-data; Save sends them all as JSON.
+  var memBox = document.getElementById("memories-editor");
+  if (memBox) {
+    var memories = JSON.parse(document.getElementById("memories-data").textContent || "[]");
+    var memSaved = JSON.stringify(memories), memNote = document.getElementById("mem-saved");
+    var memPickTpl = document.getElementById("mem-photos");
+    var memDirty = function () {
+      memNote.className = "saved";
+      memNote.textContent = JSON.stringify(memories) === memSaved ? "" : "Not saved yet";
+    };
+    var drawMemories = function () {
+      memBox.textContent = "";
+      if (!memories.length) {
+        var none = document.createElement("p");
+        none.className = "hint";
+        none.textContent = "No memories yet.";
+        memBox.appendChild(none);
+      }
+      memories.forEach(function (m, i) {
+        var box = document.createElement("div");
+        box.className = "mem";
+        var tools = document.createElement("div");
+        tools.className = "mem-tools";
+        var num = document.createElement("span");
+        num.className = "mem-num";
+        num.textContent = "Memory " + (i + 1);
+        tools.appendChild(num);
+        [["↑", "Move up", i > 0, function () { memories.splice(i - 1, 0, memories.splice(i, 1)[0]); }],
+         ["↓", "Move down", i < memories.length - 1, function () { memories.splice(i + 1, 0, memories.splice(i, 1)[0]); }],
+         ["Delete", "Delete this memory", true, function () { if (confirm("Delete memory " + (i + 1) + (m.title ? ", “" + m.title + "”" : "") + "?")) memories.splice(i, 1); }]
+        ].forEach(function (t) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.textContent = t[0];
+          b.title = t[1];
+          b.setAttribute("aria-label", t[1]);
+          b.disabled = !t[2];
+          if (t[0] === "Delete") b.className = "delete";
+          b.addEventListener("click", function () { t[3](); drawMemories(); memDirty(); });
+          tools.appendChild(b);
+        });
+        box.appendChild(tools);
+
+        var top = document.createElement("div");
+        top.className = "mem-top";
+        var photo = document.createElement("button");
+        photo.type = "button";
+        photo.className = "mem-photo";
+        photo.title = "Choose a photo";
+        if (m.photo) {
+          var img = document.createElement("img");
+          img.src = "/media/" + encodeURIComponent(m.photo);
+          img.alt = m.photo;
+          photo.appendChild(img);
+        } else photo.textContent = "Add a photo";
+        top.appendChild(photo);
+        var fields = document.createElement("div");
+        fields.className = "mem-fields";
+        var title = document.createElement("input");
+        title.className = "mem-title";
+        title.maxLength = 120;
+        title.placeholder = "Title, e.g. The bucket";
+        title.value = m.title || "";
+        title.setAttribute("aria-label", "Title of memory " + (i + 1));
+        title.addEventListener("input", function () { m.title = title.value; memDirty(); });
+        fields.appendChild(title);
+        var file = document.createElement("div");
+        file.className = "hint";
+        file.textContent = m.photo ? m.photo : "No photo (tap the square to pick one)";
+        fields.appendChild(file);
+        top.appendChild(fields);
+        box.appendChild(top);
+
+        var text = document.createElement("textarea");
+        text.maxLength = 6000;
+        text.placeholder = "The memory…";
+        text.value = m.text || "";
+        text.setAttribute("aria-label", "Memory " + (i + 1));
+        text.addEventListener("input", function () { m.text = text.value; memDirty(); });
+        box.appendChild(text);
+
+        // Tapping the square opens a grid of photos under this memory.
+        photo.addEventListener("click", function () {
+          var open = box.querySelector(".mem-pick");
+          if (open) return box.removeChild(open);
+          var pick = memPickTpl.content.firstElementChild.cloneNode(true);
+          pick.addEventListener("click", function (e) {
+            var b = e.target.closest("button[data-file]");
+            if (!b) return;
+            m.photo = b.getAttribute("data-file");
+            drawMemories();
+            memDirty();
+          });
+          top.insertAdjacentElement("afterend", pick);
+        });
+        memBox.appendChild(box);
+      });
+    };
+    drawMemories();
+    document.getElementById("mem-add").addEventListener("click", function () {
+      memories.push({ title: "", text: "", photo: "" });
+      drawMemories();
+      memDirty();
+      var boxes = memBox.querySelectorAll(".mem");
+      var last = boxes[boxes.length - 1];
+      last.scrollIntoView({ block: "center", behavior: "smooth" });
+      last.querySelector(".mem-title").focus({ preventScroll: true });
+    });
+    document.getElementById("mem-save").addEventListener("click", function () {
+      var sent = JSON.stringify(memories);
+      memNote.className = "saved"; memNote.textContent = "Saving…";
+      fetch("/media-admin", { method: "POST", body: new URLSearchParams({ action: "memories", data: sent }) })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error); return j; }); })
+        .then(function (j) {
+          memSaved = sent;
+          memNote.textContent = "Saved (" + j.count + " memor" + (j.count === 1 ? "y" : "ies") + ")";
+        }, function (e) { memNote.className = "saved err"; memNote.textContent = (e && e.message) || "Couldn’t save"; });
+    });
+    window.addEventListener("beforeunload", function (e) { if (JSON.stringify(memories) !== memSaved) { e.preventDefault(); e.returnValue = ""; } });
+  }
+
   var drop = document.getElementById("drop"), pick = document.getElementById("pick"), prog = document.getElementById("progress");
   if (!drop) return;
   pick.addEventListener("change", function () { start(pick.files); });
@@ -1358,5 +1557,6 @@ http.createServer(function (req, res) {
   if (u.pathname === "/media-admin/upload") return upload(req, res, u.searchParams);
   action(req, res);
 }).listen(PORT, HOST, function () {
+  migrate();
   console.log("scout-media listening on " + HOST + ":" + PORT + ", managing " + MEDIA_ROOT);
 });

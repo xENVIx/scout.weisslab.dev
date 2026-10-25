@@ -120,7 +120,9 @@ var clipQueue = Promise.resolve();
 
   function atTop(el) { return el.scrollTop <= 1; }
   function atBottom(el) { return el.scrollTop + el.clientHeight >= el.scrollHeight - 2; }
-  function busy() { return lightbox && !lightbox.hidden; }
+  // The lightbox or an open memory (#memory-view) has the input instead.
+  var memoryView = document.getElementById("memory-view");
+  function busy() { return lightbox && !lightbox.hidden || memoryView && !memoryView.hidden; }
 
   function setShift(el, px) { el.style.setProperty("--shift", px + "px"); }
 
@@ -605,6 +607,8 @@ function windowDots(wrap, dots, current) {
 
   var IMAGE_RE = /\.(jpe?g|png|gif|webp|avif)$/i;
   var VIDEO_RE = /\.(mp4|webm|mov|m4v)$/i;
+  var GIF_PLAYS = 4;      // a GIF stays on top for this many runs through
+  var FALLBACK_MS = 5000; // a card that failed to load
 
   var stage = document.getElementById("slideshow-stage");
   var captionEl = document.getElementById("slideshow-caption");
@@ -644,11 +648,14 @@ function windowDots(wrap, dots, current) {
     return set;
   }
 
+  // slideshow.txt is what's in Moments; moments.txt is the old list of its
+  // GIFs and videos, from before Moments and the slideshow were one (the
+  // media manager merges it into slideshow.txt).
   var notInGallery = {}, inSlideshow = {}, order = [], captions = {};
-  Promise.all([fetchLines("not_in_gallery.txt"), fetchLines("slideshow.txt"), fetchLines("order.txt"), fetchLines("captions.txt"), fetchLines("settings.txt")])
+  Promise.all([fetchLines("not_in_gallery.txt"), fetchLines("slideshow.txt"), fetchLines("order.txt"), fetchLines("captions.txt"), fetchLines("settings.txt"), fetchLines("moments.txt")])
     .then(function (lists) {
       notInGallery = toSet(lists[0]);
-      inSlideshow = toSet(lists[1]);
+      inSlideshow = toSet(lists[1].concat(lists[5]));
       order = lists[2];
       lists[3].forEach(function (l) {
         var i = l.indexOf("=");
@@ -681,38 +688,72 @@ function windowDots(wrap, dots, current) {
         return i !== j ? i - j : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
       });
       buildGrid(files.filter(function (f) { return !notInGallery[f]; }));
-      // Still photos only: GIFs and videos belong to Moments.
-      start(files.filter(function (f) { return inSlideshow[f] && IMAGE_RE.test(f) && !/\.gif$/i.test(f); }));
+      start(files.filter(function (f) { return inSlideshow[f]; }));
     })
     .catch(function (err) {
       console.error("slideshow: could not read " + DIR, err);
-      stage.innerHTML = '<div class="ss-empty">Couldn’t load the slideshow right now.</div>';
+      stage.innerHTML = '<div class="ss-empty">Couldn’t load these right now.</div>';
       if (grid) grid.innerHTML = '<div class="ss-empty">Couldn’t load the photos right now.</div>';
     });
 
-  // The photos as a stack of cards (cardStack): the top one showing, the
-  // next couple peeking out below, and each one sliding out left and under
-  // as the next comes up.
+  // Moments: the photos, GIFs and videos as a stack of cards (cardStack):
+  // the top one showing, the next couple peeking out below, and each one
+  // sliding out left and under as the next comes up. A photo stays on top
+  // for AUTOPLAY_MS, a GIF for GIF_PLAYS runs through, a video until it has
+  // played (muted, with a sound button; only the top one plays).
   function start(files) {
-    items = files.map(function (f) { return { file: f, caption: captions[f] || "" }; });
+    items = files.map(function (f) {
+      return { file: f, caption: captions[f] || "", kind: VIDEO_RE.test(f) ? "video" : /\.gif$/i.test(f) ? "gif" : "photo" };
+    });
     if (!items.length) {
-      stage.innerHTML = '<div class="ss-empty">No photos in the slideshow yet.</div>';
+      stage.innerHTML = '<div class="ss-empty">Nothing here yet.</div>';
       return;
     }
     var cards = items.map(function (item, i) {
       var card = document.createElement("div");
       card.className = "stack-card ss-card";
-      var el = document.createElement("img");
-      // The top few as you come near; the rest once you're on the slideshow.
-      whenNear(stage, function () { el.src = DIR + item.file; }, i < STACK_DEPTH ? 1 : 0);
-      el.alt = item.caption || "Scout";
-      el.loading = i < STACK_DEPTH ? "eager" : "lazy";
-      el.addEventListener("click", function () { openLightbox(el.src, false, item.caption); });
-      card.appendChild(el);
+      var src = DIR + encodeURIComponent(item.file);
+      function failed() {
+        item.failed = true;
+        card.classList.add("is-empty");
+        if (stack && stack.top() === i) tick();
+      }
+      if (item.kind === "video") {
+        var v = document.createElement("video");
+        v.muted = true;
+        v.playsInline = true;
+        v.preload = "none";
+        // The top few as you come near; the rest once you're on Moments.
+        whenNear(stage, function () { v.preload = "metadata"; v.src = src; }, i < STACK_DEPTH ? 1 : 0);
+        v.addEventListener("error", failed);
+        v.addEventListener("ended", function () { if (stack && stack.top() === i) next(); });
+        // The progress bar follows the video.
+        v.addEventListener("timeupdate", function () {
+          if (stack && stack.top() === i && v.duration) bar.style.width = (v.currentTime / v.duration * 100) + "%";
+        });
+        item.video = v;
+        card.appendChild(v);
+        card.appendChild(soundButton(v));
+      } else {
+        var el = document.createElement("img");
+        whenNear(stage, function () {
+          el.src = src;
+          if (item.kind === "gif") gifLength(src).then(function (ms) { if (ms) item.ms = ms * GIF_PLAYS; });
+        }, i < STACK_DEPTH ? 1 : 0);
+        el.alt = item.caption || "Scout";
+        el.loading = i < STACK_DEPTH ? "eager" : "lazy";
+        el.addEventListener("error", failed);
+        el.addEventListener("click", function () { openLightbox(el.src, false, item.caption); });
+        card.appendChild(el);
+      }
+      var oops = document.createElement("div");
+      oops.className = "ss-missing";
+      oops.textContent = "Oops, this one didn’t load.";
+      card.appendChild(oops);
 
       var b = document.createElement("button");
       b.type = "button";
-      b.setAttribute("aria-label", "Photo " + (i + 1));
+      b.setAttribute("aria-label", "Moment " + (i + 1));
       b.appendChild(document.createElement("i"));
       b.addEventListener("click", function () { goTo(i); });
       dotWrap.appendChild(b);
@@ -733,6 +774,7 @@ function windowDots(wrap, dots, current) {
     stage.appendChild(progress);
     bar.addEventListener("animationend", next);
 
+    // (Over a video the mouse doesn't pause it; its own controls do.)
     stage.addEventListener("mouseenter", function () { paused = true; setPaused(); });
     stage.addEventListener("mouseleave", function () { paused = false; setPaused(); });
 
@@ -747,7 +789,7 @@ function windowDots(wrap, dots, current) {
 
     document.addEventListener("keydown", function (e) {
       var tag = e.target.tagName;
-      if (tag === "TEXTAREA" || tag === "INPUT") return; // typing a message
+      if (tag === "TEXTAREA" || tag === "INPUT" || !sceneShown()) return; // typing a message, or elsewhere
       if (e.key === "ArrowRight") next();
       else if (e.key === "ArrowLeft") previous();
     });
@@ -818,9 +860,39 @@ function windowDots(wrap, dots, current) {
     else grid.classList.add("masonry");
   }
 
-  // Card i has come to the top of the stack.
+  function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+  // A video plays muted (browsers only autoplay silent video); this button
+  // turns the sound on and off, and follows the player's own mute control too.
+  function soundButton(v) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "sound";
+    b.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 6v4h2.5l3.5 3V3L5 6H2.5Z" fill="currentColor"/><path class="waves" d="M10.6 5.6a3.4 3.4 0 0 1 0 4.8M12.4 3.8a6 6 0 0 1 0 8.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path class="cross" d="m10.5 6 3.5 4m0-4-3.5 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><span></span>';
+    function label() {
+      var on = !v.muted && v.volume > 0;
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.querySelector("span").textContent = on ? "Sound on" : "Tap for sound";
+    }
+    b.addEventListener("click", function () {
+      v.muted = !v.muted;
+      if (!v.muted && !v.volume) v.volume = 1;
+      label();
+    });
+    v.addEventListener("volumechange", label);
+    label();
+    return b;
+  }
+
+  // Card i has come to the top of the stack: only its video has controls
+  // (and loops, if it's the only card).
   function show(i) {
     current = i;
+    items.forEach(function (item, j) {
+      if (!item.video) return;
+      item.video.loop = items.length === 1;
+      if (j === i) item.video.setAttribute("controls", "");
+      else item.video.removeAttribute("controls");
+    });
     dots.forEach(function (d, j) { d.setAttribute("aria-current", j === current ? "true" : "false"); });
     windowDots(dotWrap, dots, current);
     if (counter) counter.textContent = pad(current + 1) + " / " + pad(items.length);
@@ -829,28 +901,39 @@ function windowDots(wrap, dots, current) {
 
   function pad(n) { return n < 10 ? "0" + n : String(n); }
 
-  // Restart the progress bar for the current slide.
+  // Start the top card's time over: the progress bar runs for a photo's or
+  // GIF's time, or follows a video (which starts from the beginning).
   function tick() {
+    var item = items[current];
     bar.style.animation = "none";
     bar.style.width = "0";
-    var on = AUTOPLAY_MS && items.length > 1;
+    var on = items.length > 1;
     bar.parentNode.hidden = !on;
-    if (!on) return;
-    void bar.offsetWidth;
-    bar.style.width = "";
-    bar.style.animation = "ss-fill " + AUTOPLAY_MS + "ms linear forwards";
+    if (item.video && !item.failed) { try { item.video.currentTime = 0; } catch (e) {} }
+    if (on && !(item.video && !item.failed)) {
+      void bar.offsetWidth;
+      bar.style.width = "";
+      bar.style.animation = "ss-fill " + (item.failed ? FALLBACK_MS : item.ms || AUTOPLAY_MS) + "ms linear forwards";
+    }
     setPaused();
   }
-  // Paused while the mouse is over the photo, the lightbox is open, or the
-  // slideshow isn't the section on screen (see scenes: .is-shown).
+  // Paused while the mouse is over a photo, the lightbox is open, or Moments
+  // isn't the section on screen (see scenes: .is-shown). The top video plays
+  // unless the lightbox is open or Moments isn't on screen.
   function sceneShown() {
     var sc = stage.closest(".scene");
     return !document.documentElement.classList.contains("scenes") || !sc || sc.classList.contains("is-shown");
   }
   function setPaused() {
-    bar.style.animationPlayState = paused || !sceneShown() || (lightbox && !lightbox.hidden) ? "paused" : "running";
+    var hold = !sceneShown() || (lightbox && !lightbox.hidden);
+    bar.style.animationPlayState = paused || hold ? "paused" : "running";
+    items.forEach(function (item, j) {
+      if (!item.video) return;
+      if (j === current && !hold && !item.failed) play(item.video);
+      else item.video.pause();
+    });
   }
-  // Arriving at the slideshow starts the photo on top over, with its full time.
+  // Arriving at Moments starts the card on top over, with its full time.
   var wasShown = false;
   document.addEventListener("scenechange", function () {
     var now = sceneShown();
@@ -985,216 +1068,14 @@ function windowDots(wrap, dots, current) {
   });
 })();
 
-/* Moments: every GIF and video ticked "Moments" at /media-admin (listed in
-   media/moments.txt), in display order (order.txt), as a stack of cards: the
-   current one on top, the next couple peeking out below it (cardStack). A video plays
-   through once and a GIF plays GIF_PLAYS times (its length is read from the
-   file's frame delays); then the top
-   card slides out to the left and tucks under the bottom of the stack while
-   the rest move up one. The arrows and dots go back and forth by hand.
-   Under the stack is the top card's caption from captions.txt (nothing if
-   it has none). Videos are muted, with a sound
-   button, and play only while the scene is up and the stack is on screen.
-   With nothing ticked, the video in index.html stays as it is. One that
-   fails to load gets .is-empty, which shows a placeholder. */
-(function moments() {
-  var DIR = "media/";
-  var MOMENT_RE = /\.(gif|mp4|webm|mov|m4v)$/i;
-  var GIF_PLAYS = 4;  // a GIF stays on top for this many runs through
-  var FALLBACK_MS = 5000; // a GIF whose length can't be read, or a card that failed to load
-  var list = document.getElementById("moments-list");
-  var first = document.getElementById("video-shell");
-  if (!list || !first) return;
-  var template = first.cloneNode(true);
-  var captionEl = document.getElementById("moments-caption");
-  var controls = document.getElementById("moments-controls");
-  var dotWrap = document.getElementById("moments-dots");
-
-  var all = [];     // every card, in moments order
-  var stack = null; // cardStack, once there are cards
-  var dots = [];
-  var videos = [];  // the videos on the page; only the top one plays
-  var timer = null, inView = true;
-
-  function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
-  function topCard() { return stack ? all[stack.top()] : null; }
-  function sceneUp() {
-    var sc = list.closest(".scene");
-    return !document.documentElement.classList.contains("scenes") || !sc || sc.classList.contains("is-shown");
-  }
-  // Play the top card's video (or time its GIF) while it can be seen; pause
-  // everything else.
-  function update() {
-    var up = sceneUp() && inView;
-    var top = topCard();
-    videos.forEach(function (v) { if (up && (!top || top.video === v)) play(v); else v.pause(); });
-    clearTimeout(timer);
-    if (!up || !top || all.length < 2) return;
-    var failed = top.el.querySelector(".is-empty");
-    if (failed || !top.video) timer = setTimeout(function () { stack.go(1); }, failed ? FALLBACK_MS : top.ms || FALLBACK_MS);
-  }
-  if ("IntersectionObserver" in window) {
-    new IntersectionObserver(function (entries) {
-      inView = entries[entries.length - 1].isIntersecting;
-      update();
-    }, { threshold: 0.25 }).observe(list);
-  }
-  document.addEventListener("scenechange", update);
-
-  function wireVideo(shell, v) {
-    function empty() { shell.classList.add("is-empty"); v.removeAttribute("controls"); }
-    v.addEventListener("error", empty);
-    // Only a real error counts: networkState reads NO_SOURCE for a moment
-    // before the browser starts loading, which used to hide a working video.
-    if (v.error) empty();
-    v.addEventListener("loadeddata", function () {
-      shell.classList.remove("is-empty");
-      if (!stack || topCard().video === v) v.setAttribute("controls", "");
-    });
-    videos.push(v);
-
-    // It plays muted (browsers only autoplay silent video); this button turns
-    // the sound on and off, and follows the player's own mute control too.
-    var sound = shell.querySelector(".sound");
-    if (!sound) return;
-    function label() {
-      var on = !v.muted && v.volume > 0;
-      sound.setAttribute("aria-pressed", on ? "true" : "false");
-      sound.querySelector("span").textContent = on ? "Sound on" : "Tap for sound";
-    }
-    sound.addEventListener("click", function () {
-      v.muted = !v.muted;
-      if (!v.muted && !v.volume) v.volume = 1;
-      if (!v.muted && v.paused) play(v);
-      label();
-    });
-    v.addEventListener("volumechange", label);
-    label();
-  }
-  wireVideo(first, first.querySelector("video"));
-  update();
-
-  // One card: a copy of the shell in index.html, with an <img> in place of
-  // the player for a GIF.
-  function build(name, caption) {
-    var el = document.createElement("div");
-    el.className = "moment stack-card";
-    var shell = template.cloneNode(true);
-    shell.removeAttribute("id");
-    Array.prototype.forEach.call(shell.querySelectorAll("[id]"), function (n) { n.removeAttribute("id"); });
-    var v = shell.querySelector("video");
-    var src = DIR + encodeURIComponent(name);
-    el.appendChild(shell);
-    var card = { el: el, caption: caption, video: null };
-    if (/\.gif$/i.test(name)) {
-      var img = document.createElement("img");
-      img.alt = caption || "Scout";
-      img.addEventListener("error", function () { shell.classList.add("is-empty"); if (topCard() === card) update(); });
-      whenNear(list, function () {
-        img.src = src;
-        gifLength(src).then(function (ms) { if (ms) card.ms = ms * GIF_PLAYS; });
-      });
-      shell.replaceChild(img, v);
-      var sound = shell.querySelector(".sound");
-      if (sound) shell.removeChild(sound);
-    } else {
-      v.removeAttribute("controls");
-      // (index.html's video has preload="none", so the page never fetches it
-      // unless nothing is ticked; the cards show their first frame.)
-      whenNear(list, function () { v.preload = "metadata"; v.src = src; });
-      card.video = v;
-      wireVideo(shell, v);
-      v.addEventListener("error", function () { if (topCard() === card) update(); });
-      // With more than one, a video plays once and then the stack moves on.
-      v.addEventListener("ended", function () { if (topCard() === card) stack.go(1); });
-    }
-    return card;
-  }
-
-  // Card i has come to the top: only its video has controls (and loops, if
-  // it's the only one), the caption and dots follow it, and it starts over.
-  function show(i) {
-    var top = all[i];
-    all.forEach(function (card) {
-      if (!card.video) return;
-      card.video.loop = all.length === 1;
-      if (card === top && !card.el.querySelector(".is-empty")) card.video.setAttribute("controls", "");
-      else { card.video.removeAttribute("controls"); card.video.pause(); }
-    });
-    if (captionEl) captionEl.textContent = top.caption || "";
-    dots.forEach(function (d, j) { d.setAttribute("aria-current", j === i ? "true" : "false"); });
-    if (dots.length) windowDots(dotWrap, dots, i);
-    if (top.video) { try { top.video.currentTime = 0; } catch (e) {} }
-    if (stack) update(); // the first call comes from cardStack itself, before stack is set
-  }
-
-  function fetchLines(name) {
-    return fetch(DIR + name, { cache: "no-cache" })
-      .then(function (r) { return r.ok ? r.text() : ""; }, function () { return ""; })
-      .then(function (t) { return t.split("\n").map(function (l) { return l.trim(); }).filter(Boolean); });
-  }
-  Promise.all([fetchLines("moments.txt"), fetchLines("order.txt"), fetchLines("captions.txt"),
-    fetch(DIR, { cache: "no-cache" }).then(function (r) { return r.ok ? r.text() : ""; }, function () { return ""; })])
-    .then(function (r) {
-      // Only files that are really there (the listing) and are GIFs or videos.
-      var present = {}, dup = {}, captions = {};
-      Array.prototype.forEach.call(new DOMParser().parseFromString(r[3], "text/html").querySelectorAll("a"), function (a) {
-        var f = a.getAttribute("href");
-        if (f) present[decodeURIComponent(f.split("/").pop())] = true;
-      });
-      var names = r[0].filter(function (f) { return MOMENT_RE.test(f) && present[f] && !dup[f] && (dup[f] = true); });
-      if (!names.length) return;
-      var order = r[1];
-      names.sort(function (a, b) {
-        var i = order.indexOf(a), j = order.indexOf(b);
-        if (i < 0) i = Infinity;
-        if (j < 0) j = Infinity;
-        return i !== j ? i - j : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
-      });
-      r[2].forEach(function (l) {
-        var k = l.indexOf("=");
-        if (k > 0) captions[l.slice(0, k)] = l.slice(k + 1).trim();
-      });
-
-      // Swap the page's own video for the stack.
-      videos.forEach(function (v) { v.pause(); });
-      videos = [];
-      while (list.firstChild) list.removeChild(list.firstChild);
-      list.classList.add("moments-stack", "card-stack");
-      all = names.map(function (name) { return build(name, captions[name]); });
-      // Bottom of the stack first, so the top card is last in the DOM too.
-      all.slice().reverse().forEach(function (c) { list.appendChild(c.el); });
-
-      if (all.length > 1 && controls && dotWrap) {
-        all.forEach(function (card, i) {
-          var b = document.createElement("button");
-          b.type = "button";
-          b.setAttribute("aria-label", "Moment " + (i + 1) + " of " + all.length);
-          b.appendChild(document.createElement("i"));
-          b.addEventListener("click", function () { stack.goTo(i); });
-          dotWrap.appendChild(b);
-          dots.push(b);
-        });
-        document.getElementById("moments-prev").addEventListener("click", function () { stack.go(-1); });
-        document.getElementById("moments-next").addEventListener("click", function () { stack.go(1); });
-        controls.hidden = false;
-      }
-      stack = cardStack(all.map(function (c) { return c.el; }), show);
-      update();
-    });
-})();
-
-/* The intro photo and the catch video are named in media/page_files.txt
-   ("intro=<file>", "catch=<file>"), which /media-admin updates when either
-   is renamed, or when another title page photo is picked there. index.html
-   carries the names they had when it was written; when the file names
-   another, this swaps it in. The intro photo stays hidden (.is-ready, in
-   style.css) until that's settled, so the old one never flashes up first.
-   (Once Moments, above, has built its list, #frisbee is gone.) */
+/* The intro photo is named in media/page_files.txt ("intro=<file>"), which
+   /media-admin updates when it's renamed, or when another title page photo
+   is picked there. index.html carries the name it had when it was written;
+   when the file names another, this swaps it in. The photo stays hidden
+   (.is-ready, in style.css) until that's settled, so the old one never
+   flashes up first. */
 (function pageFiles() {
   var hero = document.querySelector("#top .frame img");
-  var v = document.getElementById("frisbee");
-  var shell = document.getElementById("video-shell");
   function showHero() { if (hero) hero.classList.add("is-ready"); }
   setTimeout(showHero, 3000); // whatever happens, never leave it hidden
   function differs(el, name) {
@@ -1214,12 +1095,6 @@ function windowDots(wrap, dots, current) {
         hero.addEventListener("error", showHero);
         hero.src = "media/" + encodeURIComponent(names.intro);
       } else showHero();
-      if (v && shell && document.contains(v) && names["catch"] && differs(v, names["catch"])) {
-        shell.classList.remove("is-empty");
-        v.setAttribute("controls", "");
-        v.src = "media/" + encodeURIComponent(names["catch"]);
-        if (v.closest(".scene.is-active")) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
-      }
     })
     .catch(showHero);
 })();
@@ -1248,6 +1123,115 @@ function windowDots(wrap, dots, current) {
       });
     })
     .catch(function () {});
+})();
+
+/* Memories: little stories from media/memories.json ([{ title, text,
+   photo }], edited at /media-admin), as a grid of cards, each its photo and
+   title (or the start of its story, with no photo). Tapping one opens it
+   in #memory-view: the photo, title and whole story, with Previous / Next
+   (and the arrow keys) to go through them; Esc, the × or a tap outside
+   closes it. The story is paragraphs (blank lines) with **bold** and
+   *italic* (memorialInline, memorial.js), always as text, never HTML. */
+(function memories() {
+  var grid = document.getElementById("memory-grid"), view = document.getElementById("memory-view");
+  if (!grid || !view) return;
+  var photoBox = document.getElementById("mv-photo"), titleEl = document.getElementById("mv-title");
+  var textEl = document.getElementById("mv-text"), countEl = document.getElementById("mv-count");
+  var prevBtn = document.getElementById("mv-prev"), nextBtn = document.getElementById("mv-next"), closeBtn = document.getElementById("mv-close");
+  var list = [], current = 0, opener = null;
+  var plain = function (t) { return String(t || "").replace(/\*+/g, "").replace(/\s+/g, " ").trim(); };
+
+  fetch("media/memories.json", { cache: "no-cache" })
+    .then(function (r) { return r.ok ? r.json() : []; })
+    .catch(function () { return []; })
+    .then(function (data) {
+      list = (Array.isArray(data) ? data : []).filter(function (m) { return m && (m.title || m.text || m.photo); });
+      if (!list.length) {
+        var none = document.createElement("p");
+        none.className = "memory-empty";
+        none.textContent = "Memories of Scout will be shared here soon.";
+        grid.appendChild(none);
+        return;
+      }
+      list.forEach(function (m, i) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "memory-card" + (m.photo ? "" : " no-photo");
+        if (m.photo) {
+          var ph = document.createElement("span");
+          ph.className = "memory-card-photo";
+          var img = document.createElement("img");
+          img.alt = "";
+          whenNear(grid, function () { img.src = "media/" + encodeURIComponent(m.photo); });
+          ph.appendChild(img);
+          b.appendChild(ph);
+        }
+        var t = document.createElement("span");
+        t.className = "memory-card-title";
+        t.textContent = m.title || "A memory";
+        b.appendChild(t);
+        if (!m.photo && m.text) {
+          var ex = document.createElement("span");
+          ex.className = "memory-card-text";
+          var words = plain(m.text);
+          ex.textContent = words.length > 140 ? words.slice(0, 140).replace(/\s+\S*$/, "") + "…" : words;
+          b.appendChild(ex);
+        }
+        b.addEventListener("click", function () { opener = b; open(i); });
+        grid.appendChild(b);
+      });
+    });
+
+  function open(i) {
+    current = (i + list.length) % list.length;
+    var m = list[current];
+    photoBox.textContent = "";
+    photoBox.hidden = !m.photo;
+    if (m.photo) {
+      var img = document.createElement("img");
+      img.src = "media/" + encodeURIComponent(m.photo);
+      img.alt = m.title || "Scout";
+      photoBox.appendChild(img);
+    }
+    titleEl.textContent = m.title || "";
+    titleEl.hidden = !m.title;
+    textEl.textContent = "";
+    String(m.text || "").split(/\n\s*\n/).forEach(function (p) {
+      if (!p.trim()) return;
+      var el = document.createElement("p");
+      memorialInline(p.trim(), el);
+      textEl.appendChild(el);
+    });
+    countEl.textContent = list.length > 1 ? (current + 1) + " of " + list.length : "";
+    prevBtn.hidden = nextBtn.hidden = list.length < 2;
+    var wasHidden = view.hidden;
+    view.hidden = false;
+    view.querySelector(".mv-card").scrollTop = 0;
+    if (wasHidden) closeBtn.focus();
+  }
+  function shut() {
+    view.hidden = true;
+    if (opener) opener.focus();
+  }
+  closeBtn.addEventListener("click", shut);
+  prevBtn.addEventListener("click", function () { open(current - 1); });
+  nextBtn.addEventListener("click", function () { open(current + 1); });
+  view.addEventListener("click", function (e) { if (e.target === view) shut(); });
+  document.addEventListener("keydown", function (e) {
+    if (view.hidden) return;
+    if (e.key === "Escape") shut();
+    else if (e.key === "ArrowLeft") open(current - 1);
+    else if (e.key === "ArrowRight") open(current + 1);
+  });
+  // A swipe left or right goes to the next or previous one.
+  var touchX = null;
+  view.addEventListener("touchstart", function (e) { touchX = e.touches[0].clientX; }, { passive: true });
+  view.addEventListener("touchend", function (e) {
+    if (touchX === null || list.length < 2) return;
+    var dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 60) open(current + (dx < 0 ? 1 : -1));
+    touchX = null;
+  });
 })();
 
 /* Messages: visitors leave a note for Scout, up to MAX_FILES photos, GIFs

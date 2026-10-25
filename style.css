@@ -225,8 +225,9 @@ html.is-loading body > * { visibility: hidden !important; }
   font-weight: 300; letter-spacing: -.02em; color: var(--ink-strong);
 }
 
-/* ---- slideshow (markup in index.html, behaviour in script.js) ---- */
-/* A stack of cards (slideshow, Moments): script.js (cardStack) places each
+/* ---- Moments (#moments; once the slideshow, so its parts are still ss-*;
+   markup in index.html, behaviour in script.js) ---- */
+/* A stack of cards: script.js (cardStack) places each
    card with an inline transform and z-index, the top one .is-top and the
    ones below peeking out under it. .is-out is the top card's slide out to
    the left, before it tucks under the bottom. Only the top card takes
@@ -245,7 +246,15 @@ html.is-loading body > * { visibility: hidden !important; }
   background-color: var(--paper); border: 1px solid var(--rule); border-radius: 3px;
   overflow: hidden; box-shadow: 0 10px 28px rgba(64,42,25,.14);
 }
-.ss-card img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.ss-card img, .ss-card video { display: block; width: 100%; height: 100%; object-fit: contain; background-color: var(--paper); }
+/* Only the top card's sound button shows; a card that failed to load shows .ss-missing. */
+.ss-card:not(.is-top) .sound, .ss-card.is-empty .sound { display: none; }
+.ss-missing {
+  position: absolute; inset: 0; display: none; place-items: center; padding: 24px;
+  text-align: center; font-size: clamp(18px,2vw,22px); font-weight: 300; color: var(--ink-soft);
+  background-color: var(--paper);
+}
+.ss-card.is-empty .ss-missing { display: grid; }
 /* Fills over each photo's time on screen; script.js drives it. */
 .ss-progress {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 10000; height: 3px; /* over every card */
@@ -300,12 +309,7 @@ html.is-loading body > * { visibility: hidden !important; }
 .ss-hint { margin: clamp(14px,2vw,20px) 0 0; text-align: center; font-family: var(--sans); font-size: 13px; color: var(--ink-mute); }
 
 /* ---- video ---- */
-.video-shell {
-  position: relative; width: 100%; aspect-ratio: 16 / 9;
-  background-color: var(--paper); border: 1px solid var(--rule); border-radius: 3px; overflow: hidden;
-}
-.video-shell video, .video-shell > img { display: block; width: 100%; height: 100%; object-fit: contain; background-color: var(--paper); }
-/* Sound toggle over the corner of the catch video (script.js). */
+/* Sound toggle over the corner of a video in Moments (script.js). */
 .sound {
   position: absolute; top: 12px; right: 12px; z-index: 1;
   display: flex; align-items: center; gap: 8px;
@@ -318,19 +322,6 @@ html.is-loading body > * { visibility: hidden !important; }
 .sound .waves { display: none; }
 .sound[aria-pressed="true"] .waves { display: inline; }
 .sound[aria-pressed="true"] .cross { display: none; }
-.video-shell.is-empty .sound { display: none; }
-.video-missing {
-  position: absolute; inset: 0; display: none;
-  place-items: center; padding: 24px; text-align: center; background-color: var(--paper);
-}
-.video-shell.is-empty .video-missing { display: grid; }
-.video-missing p { margin: 0; font-size: clamp(19px,2.2vw,24px); font-weight: 300; color: var(--ink-soft); }
-.video-missing small {
-  display: block; margin: 10px auto 0; max-width: 46ch;
-  font-family: var(--sans); font-size: 14px; line-height: 1.6;
-  color: var(--ink-mute);
-}
-.video-missing code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .caption {
   margin: clamp(16px,2.4vw,22px) 0 0;
   font-size: clamp(18px,2vw,21px); line-height: 1.7;
@@ -338,15 +329,6 @@ html.is-loading body > * { visibility: hidden !important; }
   max-width: 52ch; text-wrap: pretty;
 }
 
-#moments .caption { margin-inline: auto; text-align: center; }
-#moments-caption { min-height: 1.7em; } /* keeps the arrows still when a moment has no caption */
-/* Moments: a stack of cards like the slideshow's (.card-stack, above).
-   The cards are all absolutely placed, so the section needs its width set
-   (in a scene's flex column it would otherwise shrink to fit). */
-#moments { width: 100%; }
-.moments-stack { aspect-ratio: 16 / 9; }
-.moments-stack .video-shell { height: 100%; box-shadow: 0 10px 28px rgba(64,42,25,.14); }
-.moments-stack .moment:not(.is-top) .sound { display: none; }
 .ss-controls[hidden] { display: none; }
 
 /* ---- gallery grid (filled by script.js from media/) ----
@@ -462,6 +444,79 @@ html.is-loading body > * { visibility: hidden !important; }
    centering puts it in the middle. When zoomed past that, the viewport
    grows to fit the image and .lightbox scrolls to reveal it — the image
    never has to jump between "centered" and "pinned to a corner" layouts. */
+/* ---- Memories: a grid of cards (script.js builds them from
+   media/memories.json); tapping one opens it in #memory-view ---- */
+#memories { width: 100%; }
+.memory-grid {
+  display: grid; gap: clamp(16px, 2.4vw, 26px);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr));
+}
+.memory-card {
+  display: flex; flex-direction: column; text-align: left; padding: 10px 10px 14px;
+  border: 1px solid var(--rule); border-radius: 3px; background: #FFFDF8; color: var(--ink);
+  box-shadow: 0 1px 2px rgba(64,42,25,.06), 0 8px 22px rgba(64,42,25,.1);
+  font: inherit; cursor: pointer;
+  transition: transform 300ms cubic-bezier(.2,.7,.3,1), box-shadow 300ms;
+}
+.memory-card:hover, .memory-card:focus-visible { transform: translateY(-3px); box-shadow: 0 2px 4px rgba(64,42,25,.08), 0 14px 32px rgba(64,42,25,.16); }
+.memory-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.memory-card-photo { display: block; aspect-ratio: 4 / 3; overflow: hidden; border-radius: 2px; background: #EFE3D2; }
+.memory-card-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.memory-card-title {
+  display: block; margin-top: 12px; padding: 0 4px;
+  font-size: clamp(19px, 2vw, 22px); line-height: 1.3; font-style: italic; font-weight: 400; color: var(--ink-strong);
+}
+.memory-card.no-photo { justify-content: flex-start; min-height: 180px; padding: 18px 16px; }
+.memory-card.no-photo .memory-card-title { margin-top: 0; }
+.memory-card-text {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; line-clamp: 5; overflow: hidden;
+  margin-top: 10px; padding: 0 4px; font-size: 16px; line-height: 1.55; font-weight: 300; color: var(--ink-soft);
+}
+.memory-empty { margin: 0; font-style: italic; font-weight: 300; font-size: clamp(18px, 2vw, 21px); color: var(--ink-mute); }
+@media (max-width: 640px) {
+  .memory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .memory-card { padding: 7px 7px 10px; }
+  .memory-card-title { font-size: 16px; margin-top: 8px; padding: 0 2px; }
+  .memory-card-text { font-size: 14px; -webkit-line-clamp: 4; line-clamp: 4; }
+  .memory-card.no-photo { min-height: 0; padding: 12px 10px; }
+}
+
+/* One memory, over the page. */
+.memory-view {
+  position: fixed; inset: 0; z-index: 900;
+  display: grid; place-items: center; padding: clamp(12px, 4vw, 40px);
+  background: rgba(36,26,20,.55);
+}
+.memory-view[hidden] { display: none; }
+.mv-card {
+  position: relative; width: min(100%, 680px); max-height: 100%; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--paper); border-radius: 4px; box-shadow: 0 30px 80px rgba(0,0,0,.35);
+}
+.mv-close {
+  position: sticky; top: 10px; float: right; z-index: 1; margin: 10px 10px -50px 0;
+  width: 40px; height: 40px; border: 0; border-radius: 999px;
+  background: rgba(250,244,234,.92); color: var(--ink); font-size: 26px; line-height: 1; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,.2);
+}
+.mv-photo img { display: block; width: 100%; max-height: 60vh; object-fit: cover; }
+.mv-photo[hidden] { display: none; }
+.mv-body { padding: clamp(22px, 4vw, 36px) clamp(20px, 5vw, 44px) 8px; }
+.mv-title { margin: 0 44px 14px 0; font-size: clamp(26px, 3.4vw, 34px); line-height: 1.2; font-weight: 400; font-style: italic; color: var(--ink-strong); }
+.mv-photo:not([hidden]) + .mv-body .mv-title { margin-right: 0; }
+.mv-text p { margin: 0 0 1em; font-size: clamp(18px, 2vw, 21px); line-height: 1.7; font-weight: 300; color: var(--ink-soft); text-wrap: pretty; }
+.mv-text strong { font-weight: 600; color: #33271F; }
+.mv-nav {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px clamp(20px, 5vw, 44px) 22px; border-top: 1px solid var(--rule); margin-top: 8px;
+  font-family: var(--sans); font-size: 13px; color: var(--ink-mute);
+}
+.mv-nav button {
+  padding: 8px 14px; border: 1px solid var(--edge); border-radius: 999px; background: var(--paper);
+  font: 600 13px var(--sans); color: var(--ink-soft); cursor: pointer;
+}
+.mv-nav button:hover { background: var(--accent); border-color: var(--accent); color: #FFF8EC; }
+.mv-nav button[hidden] { visibility: hidden; display: inline-block; }
+
 .lightbox {
   position: fixed; inset: 0; z-index: 1000;
   background: rgba(20,15,10,.92);
@@ -557,9 +612,7 @@ footer .eyebrow { margin-top: 14px; }
 /* Re-assert the light palette if anything tries to serve a dark treatment. */
 @media (prefers-color-scheme: dark) {
   html, body { background-color: var(--paper); color: #2B211B; }
-  .band, footer, .hero-bg, #slideshow-stage, .video-shell, .video-missing { background-color: var(--paper); }
-  .video-missing p { color: #4A3B31; }
-  .video-missing small { color: #6B5748; }
+  .band, footer, .hero-bg, #slideshow-stage { background-color: var(--paper); }
   .dedication p:first-of-type { color: #33271F; }
   .dedication p:not(:first-of-type), .caption, .hero blockquote { color: #4A3B31; }
   .head h2, .hero h1 { color: #241A14; }
