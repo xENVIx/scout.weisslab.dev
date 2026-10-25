@@ -1227,17 +1227,12 @@ function windowDots(wrap, dots, current) {
 /* The Memorial section's text lives in media/memorial.txt (edited at
    /media-admin), paragraphs separated by blank lines, with **bold**,
    *italic*, "# " headings and (caption[photo.jpg]) photos; memorial.js
-   turns it into DOM nodes (never HTML). index.html holds a plain copy as
-   the fallback. Its photos load once the Memorial is near, open in the
+   turns it into DOM nodes (never HTML). #dedication is empty in
+   index.html. Its photos load once the Memorial is near, open in the
    lightbox when clicked, and are left out if the file is gone. */
 (function memorialText() {
   var section = document.getElementById("dedication");
-  if (!section) return;
-  // Until then the fallback copy is hidden (.js in style.css); shown after
-  // all if the file can't be had, or takes over 4s.
-  function ready() { section.classList.add("is-ready"); }
-  var giveUp = setTimeout(ready, 4000);
-  if (typeof renderMemorial !== "function") return ready();
+  if (!section || typeof renderMemorial !== "function") return;
   fetch("media/memorial.txt", { cache: "no-cache" })
     .then(function (r) { return r.ok ? r.text() : ""; })
     .then(function (t) {
@@ -1252,8 +1247,7 @@ function windowDots(wrap, dots, current) {
         }
       });
     })
-    .catch(function () {})
-    .then(function () { clearTimeout(giveUp); ready(); });
+    .catch(function () {});
 })();
 
 /* Messages: visitors leave a note for Scout, up to MAX_FILES photos, GIFs

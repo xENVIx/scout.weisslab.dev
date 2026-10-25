@@ -57,7 +57,7 @@ The `#dedication` paragraphs come from `media/memorial.txt` (paragraphs separate
 - All photo styling is in `memorial.css` (loaded by `index.html` and the preview). Photos load through `whenNear`, open in the lightbox (`window.scoutLightbox`), and are left out if the file is missing. The first `<p>` (`p:first-of-type`) gets the drop letter.
 - The editor: Bold / Italic / Heading buttons; "Add photo" (thumbnail picker with caption, size and frame); a sticky photo bar (`#photo-edit`) with Size slider and Frame buttons for the photo whose line the cursor is on, or that was tapped in the preview; and a live preview that is the real page: `memorial-preview.html` (the site's CSS, `memorial.js`, `html.scenes` and a `.scene`) in an iframe 1280 px (Computer) or 390 px (Phone) wide, scaled to fit, which the admin page fills by calling the frame's `renderMemorial()` (same origin). Keep `memorial-preview.html`'s markup in step with `#dedication` in `index.html`.
 
-`index.html` keeps a plain (old) copy as the no-JS fallback; with JS it stays hidden (`.js #dedication:not(.is-ready)`) until `script.js` has rendered `memorial.txt` (or given up after 4 s), so the old text never flashes. To change the text, edit `memorial.txt`.
+`#dedication` is deliberately empty in `index.html` (the owner doesn't want the original text on the site at all, not even as a no-JS fallback); the text only ever comes from `memorial.txt`.
 
 ## Messages
 
