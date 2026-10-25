@@ -1,3 +1,1 @@
 top>dedication=LINE_MOVIE_14222163821413.gif
-memories>moments=got_a_stick_t.gif
-moments>gallery=scout_good_catch3.gif

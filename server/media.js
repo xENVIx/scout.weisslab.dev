@@ -18,9 +18,9 @@
    out of the gallery (every image is in it unless listed), slideshow.txt
    names the photos, GIFs and videos in the Moments section's stack (the
    "Moments" checkbox; nothing is unless listed). A GIF can also be
-   picked as the transition between two sections, one GIF per transition,
-   or put in the "Random" pool, which the page draws from for every
-   transition without its own: transitions.txt, "<from>><to>=<file>" and
+   picked as the transition from the first page to the Memorial (the only
+   one now; see TRANSITIONS), or put in the "Random" pool, which the page
+   draws from when no GIF has it: transitions.txt, "<from>><to>=<file>" and
    "random=<file>" lines (script.js reads it).
    memorial.txt is the Memorial
    section's text, edited in a box at the bottom of the page (paragraphs
@@ -83,14 +83,14 @@ var OLD_MOMENTS_LIST = "moments.txt"; // GIFs and videos, before Moments and the
 var MEMORIES_FILE = "memories.json";
 var MAX_MEMORIES = 100, MAX_MEMORY_TITLE = 120, MAX_MEMORY_TEXT = 6000; // characters
 var TRANSITIONS_FILE = "transitions.txt";
-// The page's sections in order, by their data-anchor (the intro's id is
-// "top"); a transition plays between one and the next, either way.
+// The boundaries between sections (by their data-anchor; the intro's id is
+// "top") that may have a transition, which plays crossing it either way.
+// Only the first page's: the owner found one between every section too much
+// (2026-10-25). The others were "dedication>memories", "memories>moments",
+// "moments>gallery" and "gallery>messages"; script.js's CLIP_BOUNDARIES
+// must list the same ones.
 var TRANSITIONS = [
-  ["top>dedication", "First page ↔ Memorial"],
-  ["dedication>memories", "Memorial ↔ Memories"],
-  ["memories>moments", "Memories ↔ Moments"],
-  ["moments>gallery", "Moments ↔ Gallery"],
-  ["gallery>messages", "Gallery ↔ Messages"]
+  ["top>dedication", "First page ↔ Memorial"]
 ];
 var CAPTIONS_FILE = "captions.txt";
 var ORDER_LIST = "order.txt";
@@ -806,7 +806,7 @@ function adminPage(req, res, query) {
   };
   var toggle = files.length ? '<div class="view">' + viewLink("type", "By type") + viewLink("order", "Display order") + '</div>' : '';
 
-  var note = '<p class="hint"><b>Moments</b> puts a photo, GIF or video in the Moments section, a stack that moves on by itself: a photo after its time (set under Moments timing), a GIF after four plays, a video after it plays once. <b>Gallery</b> puts it in the gallery grid. A GIF\'s <b>Transition</b> plays it once when moving between two sections (either way, or jumping there with the menu); each transition can have one GIF, and one already taken is greyed out. <b>Random</b> puts a GIF in a pool: every transition without its own GIF plays one from it, picked at random. Visitors can skip a transition by scrolling, tapping or pressing a key. New uploads are in the gallery but not Moments, and go at the end. ' +
+  var note = '<p class="hint"><b>Moments</b> puts a photo, GIF or video in the Moments section, a stack that moves on by itself: a photo after its time (set under Moments timing), a GIF after four plays, a video after it plays once. <b>Gallery</b> puts it in the gallery grid. A GIF\'s <b>Transition</b> plays it once when moving from the first page to the Memorial (or back, or jumping there with the menu); only one GIF can have it. <b>Random</b> puts a GIF in a pool, and when no GIF has the transition, one from the pool plays there, picked at random. Visitors can skip a transition by scrolling, tapping or pressing a key. New uploads are in the gallery but not Moments, and go at the end. ' +
     'To change the order, switch to <b>Display order</b> and drag a file to its new place (by its ⠿ handle on a phone). A caption shows under it in Moments and in the enlarged view.</p>';
 
   var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -971,7 +971,7 @@ function transitionPicker(file, transitions) {
   Object.keys(transitions).forEach(function (k) { if (k !== "random" && transitions[k] === file) mine = k; });
   return '<div class="row transition" data-file="' + esc(file) + '"><label>Transition ' +
     '<select class="transition-pick" aria-label="Transition for ' + esc(file) + '"><option value="">None</option>' +
-    '<option value="random"' + (mine === "random" ? ' selected' : '') + '>Random (any without its own)</option>' +
+    '<option value="random"' + (mine === "random" ? ' selected' : '') + '>Random (when no GIF has it)</option>' +
     TRANSITIONS.map(function (tr) {
       var taken = transitions[tr[0]] && transitions[tr[0]] !== file;
       return '<option value="' + tr[0] + '"' + (tr[0] === mine ? ' selected' : '') + (taken ? ' disabled' : '') + '>' + esc(tr[1]) + '</option>';
