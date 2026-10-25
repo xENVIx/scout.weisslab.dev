@@ -9,13 +9,23 @@
      (A description[photo.jpg 35%])  the same at 35% of the text's width
                             (MEMORIAL_SIZE when none is given; from 70% up it
                             sits centred on its own instead of beside the text)
+     (A description[photo.jpg 35% print])  with a frame: outline (the
+                            default, MEMORIAL_FRAME), print, mat or none;
+                            see memorial.css. Size and frame are each optional.
    Everything is built as DOM nodes with textContent, never as HTML.
    renderMemorial(text, container, opts) fills container; opts.dir is the
    media folder's URL, opts.setSrc(img, url) sets a photo's src (the page
    uses it to load lazily), opts.onPhoto(fig, url, caption, block) hooks
    clicks (block.n is its paragraph's place among the non-blank ones). */
-var MEMORIAL_PHOTO = /^\(([^\[\]]*)\[\s*<?([^\[\]<>\/\\]+?)>?(?:\s+(\d{1,3})%)?\s*\]\)$/;
+var MEMORIAL_PHOTO = /^\(([^\[\]]*)\[\s*<?([^\[\]<>\/\\]+?)>?(?:\s+(\d{1,3})%)?(?:\s+(outline|print|mat|none))?\s*\]\)$/i;
 var MEMORIAL_SIZE = 46, MEMORIAL_MIN = 15, MEMORIAL_WIDE = 70;
+var MEMORIAL_FRAMES = ["outline", "print", "mat", "none"], MEMORIAL_FRAME = "outline";
+
+// A photo's line: size 0 or the default, and the default frame, are left out.
+function memorialTag(caption, file, size, frame) {
+  return "(" + caption + "[" + file + (size && size !== MEMORIAL_SIZE ? " " + size + "%" : "") +
+    (frame && frame !== MEMORIAL_FRAME ? " " + frame : "") + "])";
+}
 
 // A photo's size (% of the text's width), kept within MEMORIAL_MIN..100.
 function memorialSize(n) {
@@ -34,7 +44,7 @@ function memorialBlocks(text) {
     .map(function (p) { return p.trim(); }).filter(Boolean)
     .map(function (p, n) {
       var m = MEMORIAL_PHOTO.exec(p);
-      if (m) return { kind: "photo", n: n, file: m[2], caption: m[1].trim(), size: memorialSize(m[3]), sized: !!m[3] };
+      if (m) return { kind: "photo", n: n, file: m[2], caption: m[1].trim(), size: memorialSize(m[3]), frame: (m[4] || MEMORIAL_FRAME).toLowerCase() };
       if (/^#\s/.test(p)) return { kind: "heading", text: p.replace(/^#\s+/, "") };
       return { kind: "para", text: p };
     });
@@ -61,14 +71,17 @@ function renderMemorial(text, container, opts) {
     var el;
     if (b.kind === "photo") {
       el = document.createElement("figure");
-      el.className = "memorial-photo " + (side % 2 ? "is-left" : "is-right");
+      el.className = "memorial-photo frame-" + b.frame + " " + (side % 2 ? "is-left" : "is-right");
       if (b.size < MEMORIAL_WIDE) side++; // centred ones don't take a turn
       sizeMemorialPhoto(el, b.size);
       var img = document.createElement("img");
       img.alt = b.caption || "";
       img.onload = function () { el.classList.add("is-loaded"); };
       img.onerror = function () { el.classList.add("is-missing"); if (opts.onMissing) opts.onMissing(el, b.file); };
-      el.appendChild(img);
+      var pic = document.createElement("span");
+      pic.className = "mp-frame";
+      pic.appendChild(img);
+      el.appendChild(pic);
       if (b.caption) {
         var cap = document.createElement("figcaption");
         cap.textContent = b.caption;

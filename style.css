@@ -206,29 +206,8 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
   font-style: italic; color: #33271F; text-wrap: balance;
 }
 .dedication > h3:not(:first-child) { margin-top: clamp(40px, 6vw, 60px); }
-/* Photos from (caption[photo.jpg]) lines: beside the paragraphs after them,
-   alternating sides, on wide screens; full width between them on phones.
-   They fade in once loaded; a missing one is left out. */
-.memorial-photo { margin: 0; opacity: 0; transition: opacity 900ms ease; }
-.memorial-photo.is-loaded { opacity: 1; }
-.memorial-photo.is-missing { display: none; }
-.memorial-photo img {
-  display: block; width: 100%; height: auto; border-radius: 3px;
-  box-shadow: 0 10px 30px rgba(64,42,25,.14); cursor: zoom-in;
-}
-.memorial-photo figcaption {
-  margin-top: 10px; font-size: 15px; line-height: 1.45; font-style: italic;
-  color: #6B5748; text-align: center; text-wrap: balance;
-}
-/* --w is its size from memorial.txt, in % of the text's width (twice that
-   on phones, where the column is narrow); .is-wide ones (70%+) sit centred
-   on their own line. */
-.memorial-photo { width: min(100%, calc(var(--w, 46) * 2%)); margin-left: auto; margin-right: auto; }
+/* The photos in it are styled in memorial.css. */
 @media (min-width: 700px) {
-  .memorial-photo { width: calc(var(--w, 46) * 1%); margin-bottom: 14px; }
-  .memorial-photo.is-right:not(.is-wide) { float: right; margin-left: 32px; margin-right: 0; }
-  .memorial-photo.is-left:not(.is-wide) { float: left; margin-right: 32px; margin-left: 0; }
-  .memorial-photo.is-wide { clear: both; }
   .dedication::after { content: ""; display: block; clear: both; }
 }
 

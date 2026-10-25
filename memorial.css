@@ -1,0 +1,62 @@
+/* Photos in the memorial text, from (caption[photo.jpg 35% print]) lines
+   (memorial.js). Loaded by index.html and by the preview at /media-admin,
+   so both look the same.
+
+   Size: --w is the photo's size in % of the text's width (twice that on
+   phones, where the column is narrow). On wide screens a photo floats
+   beside the paragraphs after it, alternating right and left; .is-wide
+   ones (70%+) sit centred on their own line.
+   Frame: .frame-outline (the default: a thin line offset behind it, like
+   the photo on the first page, mirrored toward the text), .frame-print (a
+   cream print with a soft shadow, slightly tilted), .frame-mat (a fine line
+   just around it) or .frame-none (just a soft shadow).
+   A photo fades in once loaded; a missing one is left out. */
+.memorial-photo {
+  box-sizing: border-box; margin-left: auto; margin-right: auto;
+  width: min(100%, calc(var(--w, 46) * 2%));
+  opacity: 0; transition: opacity 900ms ease;
+}
+.memorial-photo.is-loaded { opacity: 1; }
+.memorial-photo.is-missing { display: none; }
+.memorial-photo .mp-frame { display: block; position: relative; }
+.memorial-photo img {
+  position: relative; display: block; width: 100%; height: auto;
+  border-radius: 3px; cursor: zoom-in;
+}
+.memorial-photo figcaption {
+  position: relative; margin-top: 10px;
+  font-size: 15px; line-height: 1.45; font-style: italic;
+  color: #6B5748; text-align: center; text-wrap: balance;
+}
+
+.frame-outline .mp-frame::before {
+  content: ""; position: absolute; inset: 14px -12px -14px 12px;
+  border: 1px solid #E2D2BC; border-radius: 4px;
+}
+.frame-outline figcaption { margin-top: 26px; }
+.frame-outline:not(:has(figcaption)) { padding-bottom: 14px; }
+
+.frame-print {
+  padding: 10px 10px 2px; background: #FFFDF8; border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(64,42,25,.08), 0 12px 30px rgba(64,42,25,.14);
+  transform: rotate(-1.4deg);
+}
+.frame-print.is-left { transform: rotate(1.4deg); }
+.frame-print.is-wide { transform: rotate(-.5deg); }
+.frame-print img { border-radius: 1px; }
+.frame-print figcaption { margin: 8px 0 6px; }
+.frame-print:not(:has(figcaption)) { padding-bottom: 10px; }
+
+.frame-mat .mp-frame { padding: 6px; border: 1px solid #D9C4A6; border-radius: 5px; }
+.frame-mat img { border-radius: 2px; }
+
+.frame-none img { box-shadow: 0 10px 30px rgba(64,42,25,.14); }
+
+@media (min-width: 700px) {
+  .memorial-photo { width: calc(var(--w, 46) * 1%); margin-bottom: 14px; }
+  .memorial-photo.is-right:not(.is-wide) { float: right; margin-left: 32px; margin-right: 0; }
+  .memorial-photo.is-left:not(.is-wide) { float: left; margin-right: 32px; margin-left: 0; }
+  .memorial-photo.is-wide { clear: both; }
+  .frame-outline.is-right:not(.is-wide) .mp-frame::before { inset: 14px 12px -14px -12px; }
+  .frame-outline:not(.is-wide) { margin-bottom: 26px; }
+}

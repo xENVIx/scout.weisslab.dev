@@ -73,7 +73,7 @@ var PAGE_LIST = "page_files.txt";
 var MEMORIAL_FILE = "memorial.txt";
 // A photo in the memorial text: a paragraph of "(caption[file])" (as in
 // /memorial.js, which draws the page and the preview here).
-var MEMORIAL_PHOTO = /^\(([^\[\]]*)\[\s*<?([^\[\]<>\/\\]+?)>?(?:\s+(\d{1,3})%)?\s*\]\)$/;
+var MEMORIAL_PHOTO = /^\(([^\[\]]*)\[\s*<?([^\[\]<>\/\\]+?)>?(?:\s+(\d{1,3})%)?(?:\s+(outline|print|mat|none))?\s*\]\)$/i;
 var ROLES = { intro: "the intro photo", "catch": "the Moments video when none are ticked" };
 var GALLERY_OUT_LIST = "not_in_gallery.txt";
 var SLIDES_LIST = "slideshow.txt";
@@ -277,7 +277,7 @@ function forgetFile(file, renamedTo) {
     var m = MEMORIAL_PHOTO.exec(p);
     if (!m || m[2] !== file) return p;
     tagged = true;
-    return renamedTo ? "(" + m[1] + "[" + renamedTo + (m[3] ? " " + m[3] + "%" : "") + "])" : null;
+    return renamedTo ? "(" + m[1] + "[" + renamedTo + (m[3] ? " " + m[3] + "%" : "") + (m[4] ? " " + m[4] : "") + "])" : null;
   }).filter(function (p) { return p !== null; });
   if (tagged) writeFile(MEMORIAL_FILE, paras.join("\n\n") + "\n");
 }
@@ -796,18 +796,12 @@ function adminPage(req, res, query) {
     '.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:340px;overflow:auto}' +
     '.photo-grid button{padding:4px;border-radius:6px;display:flex;flex-direction:column;gap:4px;align-items:stretch;font-weight:400;font-size:11px}' +
     '.photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:3px;display:block}.photo-grid span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
-    '.preview-head{font:600 13px system-ui,sans-serif;text-transform:uppercase;letter-spacing:.08em;color:#6B5748;margin:28px 0 8px}' +
-    '.memorial-preview{border:1px solid #DBC8AE;border-radius:6px;background:#FAF4EA;padding:22px clamp(16px,4vw,36px);font:300 18px/1.7 Georgia,serif;color:#4A3B31;max-width:720px}' +
-    '.memorial-preview::after{content:"";display:block;clear:both}.memorial-preview>*{margin:0}.memorial-preview>*+*{margin-top:22px}' +
-    '.memorial-preview p:first-of-type{font-size:1.2em;color:#33271F}.memorial-preview p:first-of-type::first-letter{font-size:3.2em;line-height:.8;float:left;padding:.06em .16em 0 0;color:#A8571F}' +
-    '.memorial-preview strong{font-weight:700;color:#33271F}.memorial-preview h3{font:italic 400 1.35em/1.3 Georgia,serif;color:#33271F;clear:both}' +
-    '.memorial-preview figure img{display:block;width:100%;border-radius:3px}.memorial-preview figcaption{font-size:14px;font-style:italic;text-align:center;color:#6B5748;margin-top:6px}' +
-    '.memorial-preview .missing{display:block;padding:18px;border:1px dashed #9b2c2c;color:#9b2c2c;font:13px system-ui,sans-serif;text-align:center}.memorial-preview figure.is-missing img{display:none}' +
-    '.memorial-preview figure{position:relative;width:min(100%,calc(var(--w,46)*2%));margin-left:auto;margin-right:auto}' +
-    '@media(min-width:700px){.memorial-preview figure{width:calc(var(--w,46)*1%);margin-bottom:10px}.memorial-preview figure.is-right:not(.is-wide){float:right;margin-left:24px;margin-right:0}.memorial-preview figure.is-left:not(.is-wide){float:left;margin-right:24px;margin-left:0}.memorial-preview figure.is-wide{clear:both}}' +
-    '.sizer{position:absolute;left:6px;top:6px;z-index:1;width:max(calc(100% - 28px),180px);box-sizing:border-box;display:flex;gap:6px;align-items:center;padding:4px 8px;border-radius:999px;background:rgba(255,253,248,.92);box-shadow:0 1px 4px rgba(0,0,0,.2);font:600 12px system-ui,sans-serif;color:#2B211B}' +
-    '.memorial-preview figure.is-right .sizer{left:auto;right:6px}' +
-    '.sizer input{flex:1;min-width:0;margin:0}.sizer output{min-width:3.2em;text-align:right}' +
+    '.preview-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:28px 0 8px}.preview-head h3{font:600 13px system-ui,sans-serif;text-transform:uppercase;letter-spacing:.08em;color:#6B5748;margin:0}' +
+    '.seg{display:inline-flex;gap:4px}.seg button{padding:6px 12px}.seg button[aria-pressed=true],.frames button[aria-pressed=true]{background:#A8571F;border-color:#A8571F;color:#FFF8EC}' +
+    '.pv-box{position:relative;overflow:hidden;border:1px solid #DBC8AE;border-radius:6px;background:#E9DECD}.pv-box iframe{position:absolute;top:0;border:0;transform-origin:0 0;background:#FAF4EA;box-shadow:0 0 0 1px #DBC8AE}' +
+    '.frames{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px}.frames button{padding:5px 10px;font-size:12px}.frames .lab{margin-right:4px}' +
+    '.photo-edit .done{align-self:flex-start;padding:4px 10px;font-size:12px}' +
+    '@media(max-width:520px){#photo-edit{gap:8px;padding:8px;align-items:flex-start}#photo-edit img{width:44px;height:44px}#photo-edit .size{margin-top:2px}.frames{gap:3px}.frames .lab{display:none}.frames button{padding:4px 8px}}' +
     // Sliders drawn here, not by the browser (its knob stops short of the end
     // at 100%): the filled part is --fill wide, set by fillRange().
     'input[type=range]{-webkit-appearance:none;appearance:none;height:22px;padding:0;border:0;box-shadow:none;background:transparent;cursor:pointer}' +
@@ -847,8 +841,11 @@ function adminPage(req, res, query) {
     '<p class="hint">This is the text in the Memorial section. Leave a blank line between paragraphs; the first paragraph gets the large first letter. ' +
     'Select some words and press <b>B</b> or <i>I</i> to make them bold or italic (they get **stars** around them). <b>Heading</b> makes the paragraph your cursor is in a heading (it starts with "# "). ' +
     '<b>Add photo</b> puts a photo after the paragraph your cursor is in, as a line like <code>(Scout as a puppy[01_scout_baby.jpg])</code>: the words in brackets are its caption (optional). ' +
-    'To make a photo smaller or bigger, put your cursor on its line (a bar with its <b>Size</b> slider shows up above the box) or use the slider on it in the preview; that adds a size to its line, like <code>01_scout_baby.jpg 35%</code> (35% of the text’s width; from 70% up it sits centered on its own). ' +
-    'Photos sit beside the text on a computer, taking turns left and right, and between paragraphs on a phone. Move or delete the line to move or remove the photo. Nothing changes on the site until you save.</p>' +
+    'To change a photo’s size or frame, tap it in the preview or put your cursor on its line: a bar with its <b>Size</b> slider and <b>Frame</b> buttons shows up and stays at the top of the screen. Its line then reads like <code>01_scout_baby.jpg 35% print</code> (35% of the text’s width; from 70% up it sits centered on its own). ' +
+    'Photos sit beside the text on a computer, taking turns left and right, and between paragraphs on a phone (phone screens are too narrow for text beside them); the preview shows either. Move or delete the line to move or remove the photo. Nothing changes on the site until you save.</p>' +
+    '<div class="photo-edit" id="photo-edit" hidden><img alt=""><div class="pe-body"><div class="pe-name" id="pe-name"></div>' +
+    '<label class="size">Size <input type="range" id="pe-size" min="15" max="100" step="1" value="46"> <output id="pe-out"></output></label>' +
+    frameButtonsHtml("pe-frames") + '</div><button type="button" class="done" id="pe-done">Done</button></div>' +
     '<form method="post" class="memorial" id="memorial-form"><input type="hidden" name="action" value="memorial">' +
     '<div class="tools" role="toolbar" aria-label="Formatting">' +
     '<button type="button" data-wrap="**" title="Bold"><b>B</b></button>' +
@@ -858,19 +855,29 @@ function adminPage(req, res, query) {
     '<div class="photo-pick" id="photo-pick" hidden>' +
     '<label>Caption (optional) <input type="text" id="photo-cap" maxlength="200" placeholder="e.g. Scout at the farm, 2015"></label>' +
     '<label class="size">Size <input type="range" id="photo-size" min="15" max="100" step="1" value="46"> <output id="photo-size-out">46%</output></label>' +
+    frameButtonsHtml("photo-frames") +
     '<p class="hint">Tap a photo to add it after the paragraph your cursor is in.</p><div class="photo-grid">' +
     files.filter(function (f) { return PHOTO_EXT.test(f.name) || /\.gif$/i.test(f.name); }).map(function (f) {
       return '<button type="button" data-file="' + esc(f.name) + '" title="' + esc(f.name) + '"><img src="' + esc("/media/" + encodeURIComponent(f.name)) + '" loading="lazy" alt=""><span>' + esc(f.name) + '</span></button>';
     }).join("") + '</div></div>' +
-    '<div class="photo-edit" id="photo-edit" hidden><img alt=""><div class="pe-body"><div class="pe-name" id="pe-name"></div>' +
-    '<label class="size">Size <input type="range" id="pe-size" min="15" max="100" step="1" value="46"> <output id="pe-out"></output></label></div></div>' +
     '<textarea name="text" id="memorial-text" aria-label="Memorial text" maxlength="' + MAX_MEMORIAL + '">' + esc(memorial) + '</textarea>' +
     '<button class="primary">Save memorial text</button> <span class="saved" id="memorial-dirty" aria-live="polite"></span></form>' +
-    '<h3 class="preview-head">Preview</h3><div class="memorial-preview" id="memorial-preview"></div>' +
+    '<div class="preview-head"><h3>Preview: how it looks on the site</h3><span class="seg" role="group" aria-label="Preview size">' +
+    '<button type="button" data-view="computer">Computer</button><button type="button" data-view="phone">Phone</button></span></div>' +
+    '<div class="pv-box" id="pv-box"><iframe id="memorial-frame" src="/memorial-preview.html" title="Preview of the Memorial section"></iframe></div>' +
+    '<p class="hint">Tap a photo in the preview to pick it.</p>' +
     '</main><script src="/memorial.js"></script><script>(' + adminClient + ')();</script></body></html>';
   var headers = { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" };
   if (cookie) headers["Set-Cookie"] = cookie;
   send(res, 200, html, headers);
+}
+
+// The Frame buttons for a memorial photo (adminClient marks the current one).
+function frameButtonsHtml(id) {
+  return '<div class="frames" role="group" aria-label="Frame" id="' + id + '"><span class="lab">Frame</span>' +
+    [["outline", "Outline", "A thin line behind it, like the photo on the first page"], ["print", "Print", "A cream photo print, slightly tilted"], ["mat", "Thin line", "A fine line just around it"], ["none", "None", "Just a soft shadow"]].map(function (f) {
+      return '<button type="button" data-frame="' + f[0] + '" title="' + f[2] + '">' + f[1] + '</button>';
+    }).join("") + '</div>';
 }
 
 // A GIF's "Transition" menu: None, Random, or a transition between sections.
@@ -1076,13 +1083,19 @@ function adminClient() {
     });
   }
 
-  // The memorial text box: formatting buttons, photo picker, live preview
-  // (drawn by /memorial.js, the same code as the page), and a warning
-  // before leaving with unsaved changes.
+  // The memorial text box: formatting buttons, photo picker, the photo bar
+  // (size and frame of the photo whose line the cursor is on), a live
+  // preview, and a warning before leaving with unsaved changes. The
+  // preview is the real thing: /memorial-preview.html (the page's own
+  // styles and /memorial.js) in a frame as wide as a computer's or a
+  // phone's window, scaled down to fit.
   var ta = document.getElementById("memorial-text");
   if (ta && typeof renderMemorial === "function") {
-    var preview = document.getElementById("memorial-preview"), dirtyNote = document.getElementById("memorial-dirty");
-    var saved = ta.value, drawTimer;
+    var dirtyNote = document.getElementById("memorial-dirty");
+    var frame = document.getElementById("memorial-frame"), pvBox = document.getElementById("pv-box");
+    var VIEWS = { computer: [1280, 820], phone: [390, 780] };
+    var view = innerWidth < 700 ? "phone" : "computer";
+    var saved = ta.value, drawTimer, editN = -1, shownN = -1;
     // The paragraphs of the text box as [start, end) ranges, the non-blank
     // ones in the order memorialBlocks() numbers them.
     var paraRanges = function () {
@@ -1102,79 +1115,130 @@ function adminClient() {
       var f = (r.value - r.min) / (r.max - r.min);
       r.style.setProperty("--fill", "calc(9px + (100% - 18px) * " + f + ")");
     };
-    // A Size slider on each photo in the preview rewrites its line's size.
-    var addSizer = function (fig, block) {
-      var box = document.createElement("label"), range = document.createElement("input"), out = document.createElement("output");
-      box.className = "sizer";
-      box.appendChild(document.createTextNode("Size"));
-      range.type = "range"; range.min = MEMORIAL_MIN; range.max = 100; range.step = 1; range.value = block.size;
-      out.textContent = block.size + "%";
-      box.appendChild(range); box.appendChild(out);
-      fig.appendChild(box);
-      fig.setAttribute("data-n", block.n);
-      fillRange(range);
-      range.addEventListener("input", function () { setSize(block.n, memorialSize(range.value)); });
-      range.addEventListener("change", draw); // on letting go: re-lay the sides (centred ones don't take a turn)
+    var markDirty = function () { dirtyNote.textContent = ta.value === saved ? "" : "Not saved yet"; };
+    var frameButtons = function (box, current) {
+      Array.prototype.forEach.call(box.querySelectorAll("button"), function (b) {
+        b.setAttribute("aria-pressed", String(b.getAttribute("data-frame") === current));
+      });
     };
-    // Rewrites the size in paragraph n's photo line, keeping the cursor where
-    // it was, and moves both of its sliders and its preview to match.
-    var setSize = function (n, size) {
-      var r = paraRanges()[n];
-      if (!r) return;
-      var v = ta.value, m = MEMORIAL_PHOTO.exec(v.slice(r[0], r[1]));
-      if (!m) return;
-      var tag = "(" + m[1] + "[" + m[2] + " " + size + "%])", d = tag.length - (r[1] - r[0]);
-      var a = ta.selectionStart, z = ta.selectionEnd;
-      var fix = function (p) { return p <= r[0] ? p : p >= r[1] ? p + d : Math.min(p, r[0] + tag.length - 1); };
-      ta.value = v.slice(0, r[0]) + tag + v.slice(r[1]);
-      ta.setSelectionRange(fix(a), fix(z));
-      dirtyNote.textContent = ta.value === saved ? "" : "Not saved yet";
-      var fig = preview.querySelector('figure[data-n="' + n + '"]');
-      if (fig) {
-        sizeMemorialPhoto(fig, size);
-        var fr = fig.querySelector(".sizer input");
-        fr.value = size; fillRange(fr);
-        fig.querySelector(".sizer output").textContent = size + "%";
+
+    // ---- preview ----
+    var fdoc = function () { try { return frame.contentWindow.renderMemorial ? frame.contentDocument : null; } catch (e) { return null; } };
+    var layout = function () {
+      var v = VIEWS[view], s = Math.min(1, pvBox.clientWidth / v[0]);
+      frame.style.width = v[0] + "px";
+      frame.style.height = v[1] + "px";
+      frame.style.transform = "scale(" + s + ")";
+      frame.style.left = Math.max(0, (pvBox.clientWidth - v[0] * s) / 2) + "px";
+      pvBox.style.height = Math.round(v[1] * s) + "px";
+      Array.prototype.forEach.call(document.querySelectorAll("[data-view]"), function (b) {
+        b.setAttribute("aria-pressed", String(b.getAttribute("data-view") === view));
+      });
+    };
+    var figAt = function (n) { var d = fdoc(); return d && d.querySelector('figure[data-n="' + n + '"]'); };
+    // Outlines the picked photo in the preview, and scrolls to it when it's newly picked.
+    var pickInPreview = function () {
+      var d = fdoc();
+      if (!d) return;
+      Array.prototype.forEach.call(d.querySelectorAll("figure.is-picked"), function (f) { f.classList.remove("is-picked"); });
+      var fig = figAt(editN);
+      if (!fig) return;
+      fig.classList.add("is-picked");
+      if (shownN !== editN) {
+        var scene = d.querySelector(".scene");
+        scene.scrollTop += fig.getBoundingClientRect().top - 60;
       }
-      if (editN === n) { peSize.value = size; fillRange(peSize); peOut.textContent = size + "%"; }
+      shownN = editN;
     };
-    // The bar above the box: the photo whose line the cursor is on, with
-    // its own Size slider (nearer than the preview, on a phone).
-    var bar = document.getElementById("photo-edit"), peImg = bar.querySelector("img"), peName = document.getElementById("pe-name");
-    var peSize = document.getElementById("pe-size"), peOut = document.getElementById("pe-out"), editN = -1;
-    var showBar = function () {
-      var at = ta.selectionStart, rs = paraRanges(), n = -1;
-      rs.forEach(function (r, i) { if (at >= r[0] && at <= r[1]) n = i; });
-      var m = n >= 0 && MEMORIAL_PHOTO.exec(ta.value.slice(rs[n][0], rs[n][1]));
-      if (!m) { bar.hidden = true; editN = -1; return; }
-      editN = n;
-      bar.hidden = false;
-      var url = "/media/" + encodeURIComponent(m[2]);
-      if (peImg.getAttribute("src") !== url) peImg.src = url;
-      peName.textContent = (m[1].trim() || "No caption") + " · " + m[2];
-      var size = memorialSize(m[3]);
-      peSize.value = size; fillRange(peSize); peOut.textContent = size + "%";
-    };
-    ["click", "keyup", "input", "select", "focus"].forEach(function (t) { ta.addEventListener(t, showBar); });
-    document.addEventListener("selectionchange", function () { if (document.activeElement === ta) showBar(); });
-    peSize.addEventListener("input", function () { if (editN >= 0) setSize(editN, memorialSize(peSize.value)); });
-    peSize.addEventListener("change", draw);
     var draw = function () {
-      renderMemorial(ta.value, preview, {
-        dir: "/media/",
-        onPhoto: function (fig, url, caption, block) { addSizer(fig, block); },
+      markDirty();
+      var d = fdoc();
+      if (!d) return;
+      frame.contentWindow.renderMemorial(ta.value, d.getElementById("dedication"), {
+        dir: "media/",
+        onPhoto: function (fig, url, caption, block) {
+          fig.setAttribute("data-n", block.n);
+          fig.querySelector("img").addEventListener("click", function () { selectPhoto(block.n); });
+        },
         onMissing: function (fig, file) {
-          var s = document.createElement("span");
+          var s = d.createElement("span");
           s.className = "missing";
           s.textContent = "There’s no photo called " + file;
           fig.insertBefore(s, fig.firstChild);
         }
       });
-      dirtyNote.textContent = ta.value === saved ? "" : "Not saved yet";
+      pickInPreview();
     };
+    frame.addEventListener("load", draw);
+    if (fdoc()) draw();
+    Array.prototype.forEach.call(document.querySelectorAll("[data-view]"), function (b) {
+      b.addEventListener("click", function () { view = b.getAttribute("data-view"); layout(); });
+    });
+    window.addEventListener("resize", layout);
+    layout();
+
+    // ---- the photo bar ----
+    var bar = document.getElementById("photo-edit"), peImg = bar.querySelector("img"), peName = document.getElementById("pe-name");
+    var peSize = document.getElementById("pe-size"), peOut = document.getElementById("pe-out"), peFrames = document.getElementById("pe-frames");
+    // Rewrites paragraph n's photo line with a new size and/or frame,
+    // keeping the cursor where it was.
+    var setPhoto = function (n, size, frameName) {
+      var r = paraRanges()[n];
+      if (!r) return;
+      var v = ta.value, m = MEMORIAL_PHOTO.exec(v.slice(r[0], r[1]));
+      if (!m) return;
+      if (size === undefined) size = m[3] ? memorialSize(m[3]) : 0;
+      if (frameName === undefined) frameName = (m[4] || MEMORIAL_FRAME).toLowerCase();
+      var tag = memorialTag(m[1], m[2], size, frameName), d = tag.length - (r[1] - r[0]);
+      var a = ta.selectionStart, z = ta.selectionEnd;
+      var fix = function (p) { return p <= r[0] ? p : p >= r[1] ? p + d : Math.min(p, r[0] + tag.length - 1); };
+      ta.value = v.slice(0, r[0]) + tag + v.slice(r[1]);
+      ta.setSelectionRange(fix(a), fix(z));
+      markDirty();
+    };
+    var showBar = function () {
+      var at = ta.selectionStart, rs = paraRanges(), n = -1;
+      rs.forEach(function (r, i) { if (at >= r[0] && at <= r[1]) n = i; });
+      var m = n >= 0 && MEMORIAL_PHOTO.exec(ta.value.slice(rs[n][0], rs[n][1]));
+      editN = m ? n : -1;
+      bar.hidden = !m;
+      pickInPreview();
+      if (!m) return;
+      var url = "/media/" + encodeURIComponent(m[2]);
+      if (peImg.getAttribute("src") !== url) peImg.src = url;
+      peName.textContent = (m[1].trim() || "No caption") + " · " + m[2];
+      var size = memorialSize(m[3]);
+      peSize.value = size; fillRange(peSize); peOut.textContent = size + "%";
+      frameButtons(peFrames, (m[4] || MEMORIAL_FRAME).toLowerCase());
+    };
+    // Tapping a photo in the preview: put the cursor on its line.
+    var selectPhoto = function (n) {
+      var r = paraRanges()[n];
+      if (!r) return;
+      ta.setSelectionRange(r[1], r[1]);
+      showBar();
+    };
+    ["click", "keyup", "input", "select", "focus"].forEach(function (t) { ta.addEventListener(t, showBar); });
+    document.addEventListener("selectionchange", function () { if (document.activeElement === ta) showBar(); });
+    peSize.addEventListener("input", function () {
+      if (editN < 0) return;
+      var size = memorialSize(peSize.value), fig = figAt(editN);
+      fillRange(peSize); peOut.textContent = size + "%";
+      setPhoto(editN, size);
+      if (fig) frame.contentWindow.sizeMemorialPhoto(fig, size);
+    });
+    peSize.addEventListener("change", draw); // on letting go: re-lay the sides (centred ones don't take a turn)
+    peFrames.addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-frame]");
+      if (!b || editN < 0) return;
+      setPhoto(editN, undefined, b.getAttribute("data-frame"));
+      frameButtons(peFrames, b.getAttribute("data-frame"));
+      draw();
+    });
+    document.getElementById("pe-done").addEventListener("click", function () { bar.hidden = true; editN = -1; pickInPreview(); });
+
     var changed = function () { clearTimeout(drawTimer); drawTimer = setTimeout(draw, 200); };
     ta.addEventListener("input", changed);
-    draw();
     document.getElementById("memorial-form").addEventListener("submit", function () { saved = ta.value; });
     window.addEventListener("beforeunload", function (e) { if (ta.value !== saved) { e.preventDefault(); e.returnValue = ""; } });
     var edit = function (value, from, to) {
@@ -1211,15 +1275,23 @@ function adminClient() {
         b.setAttribute("aria-expanded", String(!pickBox.hidden));
       }
     });
-    var pickSize = document.getElementById("photo-size");
+
+    // ---- the photo picker ----
+    var pickSize = document.getElementById("photo-size"), pickFrames = document.getElementById("photo-frames"), pickFrame = MEMORIAL_FRAME;
     fillRange(pickSize);
+    frameButtons(pickFrames, pickFrame);
     pickSize.addEventListener("input", function () { fillRange(pickSize); document.getElementById("photo-size-out").textContent = pickSize.value + "%"; });
+    pickFrames.addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-frame]");
+      if (!b) return;
+      pickFrame = b.getAttribute("data-frame");
+      frameButtons(pickFrames, pickFrame);
+    });
     document.querySelector(".photo-grid").addEventListener("click", function (e) {
       var b = e.target.closest("button[data-file]");
       if (!b) return;
       var cap = document.getElementById("photo-cap");
-      var size = memorialSize(document.getElementById("photo-size").value);
-      var tag = "(" + cap.value.replace(/[\[\]\s]+/g, " ").trim() + "[" + b.getAttribute("data-file") + (size === MEMORIAL_SIZE ? "" : " " + size + "%") + "])";
+      var tag = memorialTag(cap.value.replace(/[\[\]\s]+/g, " ").trim(), b.getAttribute("data-file"), memorialSize(pickSize.value), pickFrame);
       var v = ta.value, end = v.trim() ? paraAt(ta.selectionStart)[1] : 0;
       var before = v.slice(0, end).replace(/\s+$/, ""), after = v.slice(end).replace(/^\s+/, "");
       var nv = (before ? before + "\n\n" : "") + tag + (after ? "\n\n" + after : "");

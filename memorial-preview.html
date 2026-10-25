@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- The Memorial section on its own, for the live preview in the Memorial
+     text box at /media-admin, which shows it in a frame (at a computer's or
+     a phone's width) and fills #dedication through this page's
+     renderMemorial(). Same styles and markup as the real page. -->
+<html lang="en" class="scenes">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<meta name="color-scheme" content="only light" />
+<title>Memorial preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..600;1,6..72,200..600&family=Karla:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="memorial.css" />
+<style>
+  /* No fade in here: the preview redraws as you type. */
+  .scenes .scene.is-active { transition: none; }
+  .memorial-photo { transition: none; }
+  .memorial-photo img { cursor: pointer; }
+  .memorial-photo.is-missing { display: block; opacity: 1; }
+  .memorial-photo.is-missing img { display: none; }
+  .memorial-photo .missing { display: block; padding: 18px; border: 1px dashed #9b2c2c; color: #9b2c2c; font: 14px/1.4 Karla, sans-serif; text-align: center; }
+  .memorial-photo.is-picked .mp-frame { outline: 3px solid #A8571F; outline-offset: 4px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="scene is-active is-shown" data-anchor="dedication">
+<section class="narrow dedication" id="dedication"></section>
+</div>
+<script src="memorial.js"></script>
+</body>
+</html>
