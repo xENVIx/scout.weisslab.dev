@@ -625,6 +625,7 @@ function windowDots(wrap, dots, current) {
   var lightboxVideo = null; // made on first use, so photos never share the viewport with it
   var lightboxClose = document.getElementById("lightbox-close");
   var lightboxCaption = document.getElementById("lightbox-caption");
+  window.scoutLightbox = openLightbox; // for the Memorial's photos
 
   if (!stage) return;
 
@@ -1223,25 +1224,26 @@ function windowDots(wrap, dots, current) {
 })();
 
 /* The Memorial section's text lives in media/memorial.txt (edited at
-   /media-admin), paragraphs separated by blank lines. index.html holds a copy
-   as the fallback; this replaces it when the file says something different.
-   Always set as text, never HTML. */
+   /media-admin), paragraphs separated by blank lines, with **bold**,
+   *italic*, "# " headings and (caption[photo.jpg]) photos; memorial.js
+   turns it into DOM nodes (never HTML). index.html holds a plain copy as
+   the fallback. Its photos load once the Memorial is near, open in the
+   lightbox when clicked, and are left out if the file is gone. */
 (function memorialText() {
   var section = document.getElementById("dedication");
-  if (!section) return;
+  if (!section || typeof renderMemorial !== "function") return;
   fetch("media/memorial.txt", { cache: "no-cache" })
     .then(function (r) { return r.ok ? r.text() : ""; })
     .then(function (t) {
-      var paras = t.replace(/\r\n?/g, "\n").split(/\n\s*\n/)
-        .map(function (p) { return p.trim(); }).filter(Boolean);
-      if (!paras.length) return;
-      var now = Array.prototype.map.call(section.querySelectorAll("p"), function (p) { return p.textContent.trim(); });
-      if (now.join("\n\n") === paras.join("\n\n")) return;
-      section.textContent = "";
-      paras.forEach(function (text) {
-        var p = document.createElement("p");
-        p.textContent = text;
-        section.appendChild(p);
+      if (!memorialBlocks(t).length) return;
+      renderMemorial(t, section, {
+        dir: "media/",
+        setSrc: function (img, url) { whenNear(img, function () { img.src = url; }); },
+        onPhoto: function (fig, url, caption) {
+          fig.querySelector("img").addEventListener("click", function () {
+            if (window.scoutLightbox) window.scoutLightbox(url, false, caption);
+          });
+        }
       });
     })
     .catch(function () {});

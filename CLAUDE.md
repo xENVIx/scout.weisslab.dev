@@ -14,6 +14,7 @@ A static, single-page memorial site for Scout (a dog), served live at inlovingme
 Only these files make up the live page:
 - `index.html` — all markup (hero `#top`, `#dedication`, `#slideshow`, `#moments` videos/GIFs, `#gallery` grid, `#messages`, lightbox).
 - `style.css` — all styling (light-only; Newsreader + Karla from Google Fonts).
+- `memorial.js` — the memorial text markup (see Memorial text), shared with `/media-admin`.
 - `script.js` — all behaviour, as IIFEs: scenes + nav, slideshow + gallery grid + lightbox, frisbee video fallback, messages form.
 - `server/` — the messages backend (Node, no dependencies; runs as systemd unit `scout-messages`). nginx denies `/server/`, dotfiles (incl. `.git`) and the notes files; see `server/README.md`. Restart the unit after editing `server/messages.js`.
 - `media/` — one flat folder for every photo and video (no subfolders). `index.html` points at two directly, the hero photo and the `#moments` fallback video (`#frisbee`). Their current names are in `media/page_files.txt` (`intro=<file>`, `catch=<file>`); the media manager updates it when either is renamed, and when the owner picks another photo in its "Title page photo" dropdown; `script.js` swaps the new name in. The hero photo stays at opacity 0 (`.is-ready` in `style.css`) until `script.js` has checked `page_files.txt`, so the old photo never flashes up first. If you change those `src`s in `index.html`, update `page_files.txt` too.
@@ -50,7 +51,7 @@ The `#moments` section ("Moments", formerly "The Catch") shows every GIF and vid
 
 ## Memorial text
 
-The `#dedication` paragraphs come from `media/memorial.txt` (paragraphs separated by blank lines), which the owner edits in the "Memorial text" box at `/media-admin`. `index.html` keeps a copy as the no-JS fallback; `script.js` replaces it with the file's text (always via `textContent`) when they differ. To change the text, edit `memorial.txt`; if you also edit the fallback in `index.html`, keep the two in sync.
+The `#dedication` paragraphs come from `media/memorial.txt` (paragraphs separated by blank lines), which the owner edits in the "Memorial text" box at `/media-admin`. It has a little markup: `**bold**`, `*italic*`, a paragraph starting `# ` is a heading, and a paragraph of just `(caption[photo.jpg])` is a photo from `media/` with an optional caption (`<photo.jpg>` in the brackets works too). `memorial.js` (loaded before `script.js`, and by the `/media-admin` page for its live preview) turns it into DOM nodes, always via `textContent`, never HTML; `MEMORIAL_PHOTO` in `server/media.js` must match its regex. On wide screens the photos float beside the text, alternating right and left (`.memorial-photo` in `style.css`); on phones they sit full width between paragraphs; they load through `whenNear`, open in the lightbox (`window.scoutLightbox`), and are left out if the file is missing. The first `<p>` (`p:first-of-type`) gets the drop letter. The editor has Bold / Italic / Heading buttons and an "Add photo" thumbnail picker that adds the tag after the cursor's paragraph. Renaming a photo at `/media-admin` updates its tags; deleting it removes them (`forgetFile`). `index.html` keeps a plain copy as the no-JS fallback; to change the text, edit `memorial.txt`.
 
 ## Messages
 

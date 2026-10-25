@@ -183,18 +183,48 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
 
 .dedication { padding: clamp(52px, 9vw, 112px) 0; }
 .dedication p { white-space: pre-line; } /* keep single line breaks from media/memorial.txt */
-.dedication p:first-child {
+/* The first paragraph (whatever comes before it in memorial.txt) is the
+   large one with the drop letter. */
+.dedication p:first-of-type {
   margin: 0; font-size: clamp(22px, 2.6vw, 29px); line-height: 1.62;
   font-weight: 300; color: #33271F; text-wrap: pretty;
 }
-.dedication p:first-child::first-letter {
+.dedication p:first-of-type::first-letter {
   font-size: 3.4em; line-height: .8; float: left;
   padding: .06em .18em 0 0; color: var(--accent); font-weight: 300;
 }
-.dedication p + p {
+.dedication p:not(:first-of-type) {
   margin: clamp(26px, 4vw, 40px) 0 0;
   font-size: clamp(19px, 2.1vw, 23px); line-height: 1.72;
   font-weight: 300; color: var(--ink-soft); text-wrap: pretty;
+}
+.dedication > :not(:first-child) { margin-top: clamp(26px, 4vw, 40px); }
+.dedication strong { font-weight: 600; color: #33271F; }
+.dedication h3 {
+  margin: 0; clear: both;
+  font-size: clamp(24px, 2.8vw, 31px); line-height: 1.3; font-weight: 400;
+  font-style: italic; color: #33271F; text-wrap: balance;
+}
+.dedication > h3:not(:first-child) { margin-top: clamp(40px, 6vw, 60px); }
+/* Photos from (caption[photo.jpg]) lines: beside the paragraphs after them,
+   alternating sides, on wide screens; full width between them on phones.
+   They fade in once loaded; a missing one is left out. */
+.memorial-photo { margin: 0; opacity: 0; transition: opacity 900ms ease; }
+.memorial-photo.is-loaded { opacity: 1; }
+.memorial-photo.is-missing { display: none; }
+.memorial-photo img {
+  display: block; width: 100%; height: auto; border-radius: 3px;
+  box-shadow: 0 10px 30px rgba(64,42,25,.14); cursor: zoom-in;
+}
+.memorial-photo figcaption {
+  margin-top: 10px; font-size: 15px; line-height: 1.45; font-style: italic;
+  color: #6B5748; text-align: center; text-wrap: balance;
+}
+@media (min-width: 700px) {
+  .memorial-photo { width: 46%; margin-bottom: 14px; }
+  .memorial-photo.is-right { float: right; margin-left: 32px; }
+  .memorial-photo.is-left { float: left; margin-right: 32px; }
+  .dedication::after { content: ""; display: block; clear: both; }
 }
 
 .band { border-top: 1px solid var(--rule); }
@@ -544,8 +574,8 @@ footer .eyebrow { margin-top: 14px; }
   .band, footer, .hero-bg, #slideshow-stage, .video-shell, .video-missing { background-color: var(--paper); }
   .video-missing p { color: #4A3B31; }
   .video-missing small { color: #6B5748; }
-  .dedication p:first-child { color: #33271F; }
-  .dedication p + p, .caption, .hero blockquote { color: #4A3B31; }
+  .dedication p:first-of-type { color: #33271F; }
+  .dedication p:not(:first-of-type), .caption, .hero blockquote { color: #4A3B31; }
   .head h2, .hero h1 { color: #241A14; }
   .label, .ss-count, .ss-hint { color: #6B5748; }
   .eyebrow { color: #8F4818; }

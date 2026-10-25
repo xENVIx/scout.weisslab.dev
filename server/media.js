@@ -71,6 +71,9 @@ var KINDS = [["image", "Images"], ["gif", "GIFs"], ["video", "Videos"], ["other"
 // leaves a gap on the page.
 var PAGE_LIST = "page_files.txt";
 var MEMORIAL_FILE = "memorial.txt";
+// A photo in the memorial text: a paragraph of "(caption[file])" (as in
+// /memorial.js, which draws the page and the preview here).
+var MEMORIAL_PHOTO = /^\(([^\[\]]*)\[\s*<?([^\[\]<>\/\\]+?)>?\s*\]\)$/;
 var ROLES = { intro: "the intro photo", "catch": "the Moments video when none are ticked" };
 var GALLERY_OUT_LIST = "not_in_gallery.txt";
 var SLIDES_LIST = "slideshow.txt";
@@ -267,6 +270,16 @@ function forgetFile(file, renamedTo) {
     delete caps[file];
     writeCaptions(caps);
   }
+  var memorial = "";
+  try { memorial = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8"); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  var tagged = false, paras = memorial.replace(/\r\n?/g, "\n").split(/\n\s*\n/).map(function (p) { return p.trim(); }).filter(Boolean);
+  paras = paras.map(function (p) {
+    var m = MEMORIAL_PHOTO.exec(p);
+    if (!m || m[2] !== file) return p;
+    tagged = true;
+    return renamedTo ? "(" + m[1] + "[" + renamedTo + "])" : null;
+  }).filter(function (p) { return p !== null; });
+  if (tagged) writeFile(MEMORIAL_FILE, paras.join("\n\n") + "\n");
 }
 
 // ---- helpers ----
@@ -778,6 +791,19 @@ function adminPage(req, res, query) {
     '#sortable .file{flex-direction:row;flex-wrap:wrap}#sortable .thumb{flex:1 1 0;height:90px}#sortable .info{flex-basis:100%}.grip{align-self:auto;height:90px}}' +
     '.memorial textarea{box-sizing:border-box;width:100%;min-height:340px;font:17px/1.6 Georgia,serif;padding:12px 14px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;color:#2B211B;resize:vertical;margin-bottom:10px}' +
     '.jump{font:14px system-ui,sans-serif;margin:-4px 0 0}' +
+    '.tools{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.tools button{min-width:44px}.tools button[aria-expanded=true]{background:#EFE2CE;border-color:#A8571F}' +
+    '.photo-pick{border:1px solid #DBC8AE;border-radius:6px;background:#FFFDF8;padding:12px;margin-bottom:10px;font:14px system-ui,sans-serif}.photo-pick label input{width:100%;box-sizing:border-box;margin-top:4px}' +
+    '.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:340px;overflow:auto}' +
+    '.photo-grid button{padding:4px;border-radius:6px;display:flex;flex-direction:column;gap:4px;align-items:stretch;font-weight:400;font-size:11px}' +
+    '.photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:3px;display:block}.photo-grid span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '.preview-head{font:600 13px system-ui,sans-serif;text-transform:uppercase;letter-spacing:.08em;color:#6B5748;margin:28px 0 8px}' +
+    '.memorial-preview{border:1px solid #DBC8AE;border-radius:6px;background:#FAF4EA;padding:22px clamp(16px,4vw,36px);font:300 18px/1.7 Georgia,serif;color:#4A3B31;max-width:720px}' +
+    '.memorial-preview::after{content:"";display:block;clear:both}.memorial-preview>*{margin:0}.memorial-preview>*+*{margin-top:22px}' +
+    '.memorial-preview p:first-of-type{font-size:1.2em;color:#33271F}.memorial-preview p:first-of-type::first-letter{font-size:3.2em;line-height:.8;float:left;padding:.06em .16em 0 0;color:#A8571F}' +
+    '.memorial-preview strong{font-weight:700;color:#33271F}.memorial-preview h3{font:italic 400 1.35em/1.3 Georgia,serif;color:#33271F;clear:both}' +
+    '.memorial-preview figure img{display:block;width:100%;border-radius:3px}.memorial-preview figcaption{font-size:14px;font-style:italic;text-align:center;color:#6B5748;margin-top:6px}' +
+    '.memorial-preview .missing{display:block;padding:18px;border:1px dashed #9b2c2c;color:#9b2c2c;font:13px system-ui,sans-serif;text-align:center}.memorial-preview figure.is-missing img{display:none}' +
+    '@media(min-width:700px){.memorial-preview figure{width:46%;margin-bottom:10px}.memorial-preview figure.is-right{float:right;margin-left:24px}.memorial-preview figure.is-left{float:left;margin-right:24px}}' +
     '.settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:15px system-ui,sans-serif}.settings input{width:80px;margin-left:8px}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
     '</style></head><body><main><form method="post" action="/admin/logout" class="out"><button>Sign out</button></form><p class="jump"><a href="/admin">← Admin</a></p><h1>Scout’s media</h1>' +
@@ -802,11 +828,26 @@ function adminPage(req, res, query) {
     '<button class="primary">Save</button></form>' +
 
     '<h2 id="memorial">Memorial text</h2>' +
-    '<p class="hint">This is the text in the Memorial section. Leave a blank line between paragraphs; the first paragraph gets the large first letter.</p>' +
-    '<form method="post" class="memorial"><input type="hidden" name="action" value="memorial">' +
-    '<textarea name="text" aria-label="Memorial text" maxlength="' + MAX_MEMORIAL + '">' + esc(memorial) + '</textarea>' +
-    '<button class="primary">Save memorial text</button></form>' +
-    '</main><script>(' + adminClient + ')();</script></body></html>';
+    '<p class="hint">This is the text in the Memorial section. Leave a blank line between paragraphs; the first paragraph gets the large first letter. ' +
+    'Select some words and press <b>B</b> or <i>I</i> to make them bold or italic (they get **stars** around them). <b>Heading</b> makes the paragraph your cursor is in a heading (it starts with "# "). ' +
+    '<b>Add photo</b> puts a photo after the paragraph your cursor is in, as a line like <code>(Scout as a puppy[01_scout_baby.jpg])</code>: the words in brackets are its caption (optional). ' +
+    'Photos sit beside the text on a computer, taking turns left and right, and between paragraphs on a phone. Move or delete the line to move or remove the photo. Nothing changes on the site until you save.</p>' +
+    '<form method="post" class="memorial" id="memorial-form"><input type="hidden" name="action" value="memorial">' +
+    '<div class="tools" role="toolbar" aria-label="Formatting">' +
+    '<button type="button" data-wrap="**" title="Bold"><b>B</b></button>' +
+    '<button type="button" data-wrap="*" title="Italic"><i>I</i></button>' +
+    '<button type="button" data-heading title="Heading">Heading</button>' +
+    '<button type="button" id="photo-toggle" aria-expanded="false" aria-controls="photo-pick">Add photo</button></div>' +
+    '<div class="photo-pick" id="photo-pick" hidden>' +
+    '<label>Caption (optional) <input type="text" id="photo-cap" maxlength="200" placeholder="e.g. Scout at the farm, 2015"></label>' +
+    '<p class="hint">Tap a photo to add it after the paragraph your cursor is in.</p><div class="photo-grid">' +
+    files.filter(function (f) { return PHOTO_EXT.test(f.name) || /\.gif$/i.test(f.name); }).map(function (f) {
+      return '<button type="button" data-file="' + esc(f.name) + '" title="' + esc(f.name) + '"><img src="' + esc("/media/" + encodeURIComponent(f.name)) + '" loading="lazy" alt=""><span>' + esc(f.name) + '</span></button>';
+    }).join("") + '</div></div>' +
+    '<textarea name="text" id="memorial-text" aria-label="Memorial text" maxlength="' + MAX_MEMORIAL + '">' + esc(memorial) + '</textarea>' +
+    '<button class="primary">Save memorial text</button> <span class="saved" id="memorial-dirty" aria-live="polite"></span></form>' +
+    '<h3 class="preview-head">Preview</h3><div class="memorial-preview" id="memorial-preview"></div>' +
+    '</main><script src="/memorial.js"></script><script>(' + adminClient + ')();</script></body></html>';
   var headers = { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" };
   if (cookie) headers["Set-Cookie"] = cookie;
   send(res, 200, html, headers);
@@ -1012,6 +1053,79 @@ function adminClient() {
       grip.focus();
       grip.scrollIntoView({ block: "nearest" });
       saveOrder();
+    });
+  }
+
+  // The memorial text box: formatting buttons, photo picker, live preview
+  // (drawn by /memorial.js, the same code as the page), and a warning
+  // before leaving with unsaved changes.
+  var ta = document.getElementById("memorial-text");
+  if (ta && typeof renderMemorial === "function") {
+    var preview = document.getElementById("memorial-preview"), dirtyNote = document.getElementById("memorial-dirty");
+    var saved = ta.value, drawTimer;
+    var draw = function () {
+      renderMemorial(ta.value, preview, {
+        dir: "/media/",
+        onMissing: function (fig, file) {
+          var s = document.createElement("span");
+          s.className = "missing";
+          s.textContent = "There’s no photo called " + file;
+          fig.insertBefore(s, fig.firstChild);
+        }
+      });
+      dirtyNote.textContent = ta.value === saved ? "" : "Not saved yet";
+    };
+    var changed = function () { clearTimeout(drawTimer); drawTimer = setTimeout(draw, 200); };
+    ta.addEventListener("input", changed);
+    draw();
+    document.getElementById("memorial-form").addEventListener("submit", function () { saved = ta.value; });
+    window.addEventListener("beforeunload", function (e) { if (ta.value !== saved) { e.preventDefault(); e.returnValue = ""; } });
+    var edit = function (value, from, to) {
+      ta.value = value;
+      ta.focus();
+      ta.setSelectionRange(from, to);
+      draw();
+    };
+    // The paragraph the cursor is in: [start, end) of ta.value.
+    var paraAt = function (at) {
+      var v = ta.value, start = v.lastIndexOf("\n\n", at - 1), end = v.indexOf("\n\n", at);
+      return [start < 0 ? 0 : start + 2, end < 0 ? v.length : end];
+    };
+    var tools = document.querySelector(".tools");
+    tools.addEventListener("mousedown", function (e) { if (e.target.closest("button")) e.preventDefault(); }); // keep the selection
+    tools.addEventListener("click", function (e) {
+      var b = e.target.closest("button");
+      if (!b) return;
+      var v = ta.value, a = ta.selectionStart, z = ta.selectionEnd;
+      if (b.hasAttribute("data-wrap")) {
+        var w = b.getAttribute("data-wrap");
+        while (a < z && /\s/.test(v[a])) a++;     // "**word **" wouldn't count as bold
+        while (z > a && /\s/.test(v[z - 1])) z--;
+        var sel = v.slice(a, z) || (w === "**" ? "bold words" : "italic words");
+        edit(v.slice(0, a) + w + sel + w + v.slice(z), a + w.length, a + w.length + sel.length);
+      } else if (b.hasAttribute("data-heading")) {
+        var p = paraAt(a);
+        if (v.slice(p[0], p[0] + 2) === "# ") edit(v.slice(0, p[0]) + v.slice(p[0] + 2), a - 2, z - 2);
+        else edit(v.slice(0, p[0]) + "# " + v.slice(p[0]), a + 2, z + 2);
+      } else if (b.id === "photo-toggle") {
+        var pickBox = document.getElementById("photo-pick");
+        pickBox.hidden = !pickBox.hidden;
+        b.setAttribute("aria-expanded", String(!pickBox.hidden));
+      }
+    });
+    document.querySelector(".photo-grid").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-file]");
+      if (!b) return;
+      var cap = document.getElementById("photo-cap");
+      var tag = "(" + cap.value.replace(/[\[\]\s]+/g, " ").trim() + "[" + b.getAttribute("data-file") + "])";
+      var v = ta.value, end = v.trim() ? paraAt(ta.selectionStart)[1] : 0;
+      var before = v.slice(0, end).replace(/\s+$/, ""), after = v.slice(end).replace(/^\s+/, "");
+      var nv = (before ? before + "\n\n" : "") + tag + (after ? "\n\n" + after : "");
+      var at = (before ? before.length + 2 : 0) + tag.length;
+      edit(nv, at, at);
+      cap.value = "";
+      document.getElementById("photo-pick").hidden = true;
+      document.getElementById("photo-toggle").setAttribute("aria-expanded", "false");
     });
   }
 
