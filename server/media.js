@@ -71,9 +71,10 @@ var KINDS = [["image", "Images"], ["gif", "GIFs"], ["video", "Videos"], ["other"
 // leaves a gap on the page.
 var PAGE_LIST = "page_files.txt";
 var MEMORIAL_FILE = "memorial.txt";
-// A photo in the memorial text: a paragraph of "(caption[file])" (as in
-// /memorial.js, which draws the page and the preview here).
-var MEMORIAL_PHOTO = /^\(([^\[\]]*)\[\s*<?([^\[\]<>\/\\]+?)>?(?:\s+(\d{1,3})%)?(?:\s+(outline|print|mat|none))?\s*\]\)$/i;
+// A photo's tag in the memorial text, "(caption[file 35% print])",
+// anywhere in it: the same as MEMORIAL_TAG in /memorial.js, which draws
+// the page and the preview here.
+var MEMORIAL_TAG = /\(([^()\[\]\n]*)\[\s*<?([^\[\]<>\/\\\n]+?)>?(?:\s+(\d{1,3})%)?(?:\s+(outline|print|mat|none))?\s*\]\)/gi;
 var ROLES = { intro: "the intro photo", "catch": "the Moments video when none are ticked" };
 var GALLERY_OUT_LIST = "not_in_gallery.txt";
 var SLIDES_LIST = "slideshow.txt";
@@ -272,14 +273,15 @@ function forgetFile(file, renamedTo) {
   }
   var memorial = "";
   try { memorial = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8"); } catch (e) { if (e.code !== "ENOENT") throw e; }
-  var tagged = false, paras = memorial.replace(/\r\n?/g, "\n").split(/\n\s*\n/).map(function (p) { return p.trim(); }).filter(Boolean);
-  paras = paras.map(function (p) {
-    var m = MEMORIAL_PHOTO.exec(p);
-    if (!m || m[2] !== file) return p;
+  var tagged = false;
+  var next = memorial.replace(MEMORIAL_TAG, function (all, cap, name, size, frame) {
+    if (name !== file) return all;
     tagged = true;
-    return renamedTo ? "(" + m[1] + "[" + renamedTo + (m[3] ? " " + m[3] + "%" : "") + (m[4] ? " " + m[4] : "") + "])" : null;
-  }).filter(function (p) { return p !== null; });
-  if (tagged) writeFile(MEMORIAL_FILE, paras.join("\n\n") + "\n");
+    return renamedTo ? "(" + cap + "[" + renamedTo + (size ? " " + size + "%" : "") + (frame ? " " + frame : "") + "])" : "";
+  });
+  // A deleted photo's tag goes, and the space or blank lines it leaves.
+  if (tagged && !renamedTo) next = next.replace(/[ \t]{2,}/g, " ").replace(/ +\n/g, "\n").replace(/\n\s*\n(\s*\n)+/g, "\n\n").trim() + "\n";
+  if (tagged) writeFile(MEMORIAL_FILE, next);
 }
 
 // ---- helpers ----
@@ -840,9 +842,9 @@ function adminPage(req, res, query) {
     '<h2 id="memorial">Memorial text</h2>' +
     '<p class="hint">This is the text in the Memorial section. Leave a blank line between paragraphs; the first paragraph gets the large first letter. ' +
     'Select some words and press <b>B</b> or <i>I</i> to make them bold or italic (they get **stars** around them). <b>Heading</b> makes the paragraph your cursor is in a heading (it starts with "# "). ' +
-    '<b>Add photo</b> puts a photo after the paragraph your cursor is in, as a line like <code>(Scout as a puppy[01_scout_baby.jpg])</code>: the words in brackets are its caption (optional). ' +
-    'To change a photo’s size or frame, tap it in the preview or put your cursor on its line: a bar with its <b>Size</b> slider and <b>Frame</b> buttons shows up and stays at the top of the screen. Its line then reads like <code>01_scout_baby.jpg 35% print</code> (35% of the text’s width; from 70% up it sits centered on its own). ' +
-    'Photos sit beside the text, taking turns left and right, at the same size for their screen on a computer and a phone (on a phone, never smaller than a thumbnail, and from 50% up centered on their own); the preview shows either. Move or delete the line to move or remove the photo. Nothing changes on the site until you save.</p>' +
+    '<b>Add photo</b> puts a photo right where your cursor is, even in the middle of a paragraph (the text after it wraps around it), or on its own if your cursor is on the empty line between two paragraphs. It shows up as a tag like <code>(Scout as a puppy[01_scout_baby.jpg])</code>: the words in brackets are its caption (optional). ' +
+    'To change a photo’s size or frame, tap it in the preview or put your cursor in its tag: a bar with its <b>Size</b> slider and <b>Frame</b> buttons shows up and stays at the top of the screen. Its line then reads like <code>01_scout_baby.jpg 35% print</code> (35% of the text’s width; from 70% up it sits centered on its own). ' +
+    'Photos sit beside the text, taking turns left and right, at the same size for their screen on a computer and a phone (on a phone, never smaller than a thumbnail, and from 50% up centered on their own); the preview shows either. Move or delete the tag to move or remove the photo. Nothing changes on the site until you save.</p>' +
     '<div class="photo-edit" id="photo-edit" hidden><img alt=""><div class="pe-body"><div class="pe-name" id="pe-name"></div>' +
     '<label class="size">Size <input type="range" id="pe-size" min="15" max="100" step="1" value="46"> <output id="pe-out"></output></label>' +
     frameButtonsHtml("pe-frames") + '</div><button type="button" class="done" id="pe-done">Done</button></div>' +
@@ -856,7 +858,7 @@ function adminPage(req, res, query) {
     '<label>Caption (optional) <input type="text" id="photo-cap" maxlength="200" placeholder="e.g. Scout at the farm, 2015"></label>' +
     '<label class="size">Size <input type="range" id="photo-size" min="15" max="100" step="1" value="46"> <output id="photo-size-out">46%</output></label>' +
     frameButtonsHtml("photo-frames") +
-    '<p class="hint">Tap a photo to add it after the paragraph your cursor is in.</p><div class="photo-grid">' +
+    '<p class="hint">Tap a photo to add it where your cursor is.</p><div class="photo-grid">' +
     files.filter(function (f) { return PHOTO_EXT.test(f.name) || /\.gif$/i.test(f.name); }).map(function (f) {
       return '<button type="button" data-file="' + esc(f.name) + '" title="' + esc(f.name) + '"><img src="' + esc("/media/" + encodeURIComponent(f.name)) + '" loading="lazy" alt=""><span>' + esc(f.name) + '</span></button>';
     }).join("") + '</div></div>' +
@@ -1096,19 +1098,6 @@ function adminClient() {
     var VIEWS = { computer: [1280, 820], phone: [390, 780] };
     var view = innerWidth < 700 ? "phone" : "computer";
     var saved = ta.value, drawTimer, editN = -1, shownN = -1;
-    // The paragraphs of the text box as [start, end) ranges, the non-blank
-    // ones in the order memorialBlocks() numbers them.
-    var paraRanges = function () {
-      var v = ta.value.replace(/\r\n?/g, "\n"), re = /\n\s*\n/g, out = [], at = 0, m;
-      var add = function (a, z) {
-        while (a < z && /\s/.test(v[a])) a++;
-        while (z > a && /\s/.test(v[z - 1])) z--;
-        if (z > a) out.push([a, z]);
-      };
-      while ((m = re.exec(v))) { add(at, m.index); at = re.lastIndex; }
-      add(at, v.length);
-      return out;
-    };
     // Colours a slider's track up to the knob's centre (the knob runs from
     // 9px in to 9px from the end).
     var fillRange = function (r) {
@@ -1135,12 +1124,12 @@ function adminClient() {
         b.setAttribute("aria-pressed", String(b.getAttribute("data-view") === view));
       });
     };
-    var figAt = function (n) { var d = fdoc(); return d && d.querySelector('figure[data-n="' + n + '"]'); };
+    var figAt = function (n) { var d = fdoc(); return d && d.querySelector('.memorial-photo[data-n="' + n + '"]'); };
     // Outlines the picked photo in the preview, and scrolls to it when it's newly picked.
     var pickInPreview = function () {
       var d = fdoc();
       if (!d) return;
-      Array.prototype.forEach.call(d.querySelectorAll("figure.is-picked"), function (f) { f.classList.remove("is-picked"); });
+      Array.prototype.forEach.call(d.querySelectorAll(".is-picked"), function (f) { f.classList.remove("is-picked"); });
       var fig = figAt(editN);
       if (!fig) return;
       fig.classList.add("is-picked");
@@ -1180,42 +1169,40 @@ function adminClient() {
     // ---- the photo bar ----
     var bar = document.getElementById("photo-edit"), peImg = bar.querySelector("img"), peName = document.getElementById("pe-name");
     var peSize = document.getElementById("pe-size"), peOut = document.getElementById("pe-out"), peFrames = document.getElementById("pe-frames");
-    // Rewrites paragraph n's photo line with a new size and/or frame,
-    // keeping the cursor where it was.
+    // Rewrites photo n's tag with a new size and/or frame, keeping the
+    // cursor where it was.
     var setPhoto = function (n, size, frameName) {
-      var r = paraRanges()[n];
-      if (!r) return;
-      var v = ta.value, m = MEMORIAL_PHOTO.exec(v.slice(r[0], r[1]));
-      if (!m) return;
-      if (size === undefined) size = m[3] ? memorialSize(m[3]) : 0;
-      if (frameName === undefined) frameName = (m[4] || MEMORIAL_FRAME).toLowerCase();
-      var tag = memorialTag(m[1], m[2], size, frameName), d = tag.length - (r[1] - r[0]);
+      var p = memorialPhotos(ta.value)[n];
+      if (!p) return;
+      var v = ta.value, r = [p.start, p.end];
+      if (size === undefined) size = p.sized ? p.size : 0;
+      if (frameName === undefined) frameName = p.frame;
+      var tag = memorialTag(p.rawCaption, p.file, size, frameName), d = tag.length - (r[1] - r[0]);
       var a = ta.selectionStart, z = ta.selectionEnd;
       var fix = function (p) { return p <= r[0] ? p : p >= r[1] ? p + d : Math.min(p, r[0] + tag.length - 1); };
       ta.value = v.slice(0, r[0]) + tag + v.slice(r[1]);
       ta.setSelectionRange(fix(a), fix(z));
       markDirty();
     };
+    // The bar shows the photo whose tag the cursor is in (or just after).
     var showBar = function () {
-      var at = ta.selectionStart, rs = paraRanges(), n = -1;
-      rs.forEach(function (r, i) { if (at >= r[0] && at <= r[1]) n = i; });
-      var m = n >= 0 && MEMORIAL_PHOTO.exec(ta.value.slice(rs[n][0], rs[n][1]));
-      editN = m ? n : -1;
-      bar.hidden = !m;
+      var at = ta.selectionStart, p = null;
+      memorialPhotos(ta.value).forEach(function (q) { if (at > q.start && at <= q.end) p = q; });
+      editN = p ? p.n : -1;
+      bar.hidden = !p;
       pickInPreview();
-      if (!m) return;
-      var url = "/media/" + encodeURIComponent(m[2]);
+      if (!p) return;
+      var url = "/media/" + encodeURIComponent(p.file);
       if (peImg.getAttribute("src") !== url) peImg.src = url;
-      peName.textContent = (m[1].trim() || "No caption") + " · " + m[2];
-      var size = memorialSize(m[3]);
-      peSize.value = size; fillRange(peSize); peOut.textContent = size + "%";
-      frameButtons(peFrames, (m[4] || MEMORIAL_FRAME).toLowerCase());
+      peName.textContent = (p.caption || "No caption") + " · " + p.file;
+      peSize.value = p.size; fillRange(peSize); peOut.textContent = p.size + "%";
+      frameButtons(peFrames, p.frame);
     };
-    // Tapping a photo in the preview: put the cursor on its line.
+    // Tapping a photo in the preview: put the cursor at the end of its tag.
     var selectPhoto = function (n) {
-      var r = paraRanges()[n];
-      if (!r) return;
-      ta.setSelectionRange(r[1], r[1]);
+      var p = memorialPhotos(ta.value)[n];
+      if (!p) return;
+      ta.setSelectionRange(p.end, p.end);
       showBar();
     };
     ["click", "keyup", "input", "select", "focus"].forEach(function (t) { ta.addEventListener(t, showBar); });
@@ -1292,10 +1279,21 @@ function adminClient() {
       if (!b) return;
       var cap = document.getElementById("photo-cap");
       var tag = memorialTag(cap.value.replace(/[\[\]\s]+/g, " ").trim(), b.getAttribute("data-file"), memorialSize(pickSize.value), pickFrame);
-      var v = ta.value, end = v.trim() ? paraAt(ta.selectionStart)[1] : 0;
-      var before = v.slice(0, end).replace(/\s+$/, ""), after = v.slice(end).replace(/^\s+/, "");
-      var nv = (before ? before + "\n\n" : "") + tag + (after ? "\n\n" + after : "");
-      var at = (before ? before.length + 2 : 0) + tag.length;
+      // Right where the cursor is: in the middle of a word, after it; on a
+      // blank line between paragraphs, as a paragraph of its own.
+      var v = ta.value, at = ta.selectionStart;
+      while (at > 0 && at < v.length && /\S/.test(v[at - 1]) && /\S/.test(v[at])) at++;
+      var before = v.slice(0, at), after = v.slice(at), nv;
+      if (!before.trim() && !after.trim()) nv = tag, at = tag.length;
+      else if (/\n\s*$/.test(before) && /^\s*\n/.test(after) || !before.trim() || !after.trim()) {
+        before = before.replace(/\s+$/, ""); after = after.replace(/^\s+/, "");
+        nv = (before ? before + "\n\n" : "") + tag + (after ? "\n\n" + after : "");
+        at = (before ? before.length + 2 : 0) + tag.length;
+      } else {
+        var l = /\s$/.test(before) ? "" : " ", r = /^\s/.test(after) ? "" : " ";
+        nv = before + l + tag + r + after;
+        at = before.length + l.length + tag.length;
+      }
       edit(nv, at, at);
       cap.value = "";
       document.getElementById("photo-pick").hidden = true;
