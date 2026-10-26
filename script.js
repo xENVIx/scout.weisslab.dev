@@ -272,14 +272,7 @@ var clipQueue = Promise.resolve();
       .catch(function () { delete clipLoads[src]; }));
   }
 
-  // The GIF transitions chosen at /media-admin, only ever on these boundaries
-  // (the same list as TRANSITIONS in server/media.js): the owner wanted just
-  // the one from the first page.
-  var CLIP_BOUNDARIES = ["top>dedication"];
-  function boundary(i) {
-    return i > 0 && CLIP_BOUNDARIES.indexOf((list[i - 1].getAttribute("data-anchor") || list[i - 1].id) + ">" +
-      (list[i].getAttribute("data-anchor") || list[i].id)) >= 0;
-  }
+  // The GIF transitions chosen at /media-admin.
   fetch("media/transitions.txt", { cache: "no-cache" })
     .then(function (r) { return r.ok ? r.text() : ""; }, function () { return ""; })
     .then(function (t) {
@@ -287,7 +280,7 @@ var clipQueue = Promise.resolve();
         var r = /^\s*random\s*=\s*(.+?)\s*$/.exec(l);
         if (r) { clipPool.push("media/" + encodeURIComponent(r[1])); return; }
         var m = /^\s*([\w-]+)>([\w-]+)\s*=\s*(.+?)\s*$/.exec(l);
-        if (!m || CLIP_BOUNDARIES.indexOf(m[1] + ">" + m[2]) < 0) return;
+        if (!m) return;
         var to = list.filter(function (sc) { return (sc.getAttribute("data-anchor") || sc.id) === m[2]; })[0];
         if (!to) return;
         to.setAttribute("data-clip", "media/" + encodeURIComponent(m[3]));
@@ -295,7 +288,7 @@ var clipQueue = Promise.resolve();
         to.removeAttribute("data-clip-ms");
       });
       list.forEach(function (sc, i) {
-        if (boundary(i) && clipPool.length && !sc.getAttribute("data-clip")) sc.setAttribute("data-clip-random", "");
+        if (i > 0 && clipPool.length && !sc.getAttribute("data-clip")) sc.setAttribute("data-clip-random", "");
       });
       pickClip(list[current]);
       pickClip(list[current + 1]);
