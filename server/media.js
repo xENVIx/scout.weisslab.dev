@@ -854,7 +854,7 @@ function adminPage(req, res, query) {
     '.photo-pick{border:1px solid #DBC8AE;border-radius:6px;background:#FFFDF8;padding:12px;margin-bottom:10px;font:14px system-ui,sans-serif}.photo-pick label input{width:100%;box-sizing:border-box;margin-top:4px}' +
     '.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:340px;overflow:auto}' +
     '.photo-grid button{padding:4px;border-radius:6px;display:flex;flex-direction:column;gap:4px;align-items:stretch;font-weight:400;font-size:11px}' +
-    '.photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:3px;display:block}.photo-grid span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '.photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:3px;display:block}.photo-grid button{position:relative}.photo-grid .gif-badge{position:absolute;top:8px;left:8px;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:600;letter-spacing:.04em}.photo-grid span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
     '.preview-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:28px 0 8px}.preview-head h3{font:600 13px system-ui,sans-serif;text-transform:uppercase;letter-spacing:.08em;color:#6B5748;margin:0}' +
     '.seg{display:inline-flex;gap:4px}.seg button{padding:6px 12px}.seg button[aria-pressed=true],.frames button[aria-pressed=true]{background:#A8571F;border-color:#A8571F;color:#FFF8EC}' +
     '.pv-box{position:relative;overflow:hidden;border:1px solid #DBC8AE;border-radius:6px;background:#E9DECD}.pv-box iframe{position:absolute;top:0;border:0;transform-origin:0 0;background:#FAF4EA;box-shadow:0 0 0 1px #DBC8AE}' +
@@ -906,7 +906,7 @@ function adminPage(req, res, query) {
     '<h2 id="memorial">Memorial text</h2>' +
     '<p class="hint">This is the text in the Memorial section. Leave a blank line between paragraphs; the first paragraph gets the large first letter. ' +
     'Select some words and press <b>B</b> or <i>I</i> to make them bold or italic (they get **stars** around them). <b>Heading</b> makes the paragraph your cursor is in a heading (it starts with "# "). ' +
-    '<b>Add photo</b> puts a photo right where your cursor is, even in the middle of a paragraph (the text after it wraps around it), or on its own if your cursor is on the empty line between two paragraphs. It shows up as a tag like <code>(Scout as a puppy[01_scout_baby.jpg])</code>: the words in brackets are its caption (optional). ' +
+    '<b>Add photo or GIF</b> puts a photo or GIF right where your cursor is, even in the middle of a paragraph (the text after it wraps around it), or on its own if your cursor is on the empty line between two paragraphs. It shows up as a tag like <code>(Scout as a puppy[01_scout_baby.jpg])</code>: the words in brackets are its caption (optional). ' +
     'To change a photo’s size or frame, tap it in the preview or put your cursor in its tag: a bar with its <b>Size</b> slider and <b>Frame</b> buttons shows up and stays at the top of the screen. Its line then reads like <code>01_scout_baby.jpg 35% print</code> (35% of the text’s width; from 70% up it sits centered on its own). ' +
     'Photos sit beside the text, taking turns left and right, at the same size for their screen on a computer and a phone (on a phone, never smaller than a thumbnail, and from 50% up centered on their own); the preview shows either. Move or delete the tag to move or remove the photo. Nothing changes on the site until you save.</p>' +
     '<div class="photo-edit" id="photo-edit" hidden><img alt=""><div class="pe-body"><div class="pe-name" id="pe-name"></div>' +
@@ -917,12 +917,12 @@ function adminPage(req, res, query) {
     '<button type="button" data-wrap="**" title="Bold"><b>B</b></button>' +
     '<button type="button" data-wrap="*" title="Italic"><i>I</i></button>' +
     '<button type="button" data-heading title="Heading">Heading</button>' +
-    '<button type="button" id="photo-toggle" aria-expanded="false" aria-controls="photo-pick">Add photo</button></div>' +
+    '<button type="button" id="photo-toggle" aria-expanded="false" aria-controls="photo-pick">Add photo or GIF</button></div>' +
     '<div class="photo-pick" id="photo-pick" hidden>' +
     '<label>Caption (optional) <input type="text" id="photo-cap" maxlength="200" placeholder="e.g. Scout at the farm, 2015"></label>' +
     '<label class="size">Size <input type="range" id="photo-size" min="15" max="100" step="1" value="46"> <output id="photo-size-out">46%</output></label>' +
     frameButtonsHtml("photo-frames") +
-    '<p class="hint">Tap a photo to add it where your cursor is.</p><div class="photo-grid">' +
+    '<p class="hint">Tap a photo or GIF (marked GIF) to add it where your cursor is.</p><div class="photo-grid">' +
     photoButtons(files) + '</div></div>' +
     '<textarea name="text" id="memorial-text" aria-label="Memorial text" maxlength="' + MAX_MEMORIAL + '">' + esc(memorial) + '</textarea>' +
     '<button class="primary">Save memorial text</button> <span class="saved" id="memorial-dirty" aria-live="polite"></span></form>' +
@@ -944,10 +944,12 @@ function adminPage(req, res, query) {
   send(res, 200, html, headers);
 }
 
-// A thumbnail button for each photo and GIF, for picking one (memorial text, memories).
+// A thumbnail button for each photo and GIF, for picking one (memorial text,
+// memories); GIFs are badged, since a thumbnail of one looks like a photo.
 function photoButtons(files) {
   return files.filter(function (f) { return PHOTO_EXT.test(f.name) || GIF_EXT.test(f.name); }).map(function (f) {
-    return '<button type="button" data-file="' + esc(f.name) + '" title="' + esc(f.name) + '"><img src="' + esc("/media/" + encodeURIComponent(f.name)) + '" loading="lazy" alt=""><span>' + esc(f.name) + '</span></button>';
+    return '<button type="button" data-file="' + esc(f.name) + '" title="' + esc(f.name) + '"><img src="' + esc("/media/" + encodeURIComponent(f.name)) + '" loading="lazy" alt="">' +
+      (GIF_EXT.test(f.name) ? '<span class="gif-badge">GIF</span>' : '') + '<span>' + esc(f.name) + '</span></button>';
   }).join("");
 }
 function photoGridHtml(files) {

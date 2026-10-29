@@ -3,7 +3,7 @@
    separated by blank lines, and:
      **bold**  *italic*
      # A heading            (a paragraph starting with "# ")
-     (A caption[photo.jpg 35% print])   a photo from media/, anywhere: on
+     (A caption[photo.jpg 35% print])   a photo or GIF from media/, anywhere: on
                             its own between paragraphs, or in the middle of
                             one, where the text after it wraps around it.
                             The caption is optional: ([photo.jpg]), and
