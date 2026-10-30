@@ -649,3 +649,47 @@ footer .eyebrow { margin-top: 14px; }
   .label, .ss-count, .ss-hint { color: #6B5748; }
   .eyebrow { color: #8F4818; }
 }
+
+/* ---- Scout chasing a frisbee along the bottom (script.js, scoutRun()):
+   .runner-go is moved across; .is-running while it moves, .is-left when
+   he's heading back, .is-caught on the last section. Under the clips,
+   the memory reader and the lightbox. ---- */
+.runner {
+  position: fixed; left: 0; right: 0; bottom: max(6px, env(safe-area-inset-bottom)); z-index: 400;
+  height: 40px; pointer-events: none;
+}
+.runner-go { position: absolute; left: 0; bottom: 0; will-change: transform; }
+.runner.is-ready .runner-go { transition: transform 1200ms cubic-bezier(.45,.05,.35,1); }
+.runner-dog { display: block; width: 58px; height: auto; overflow: visible; transition: transform 250ms ease; }
+.runner.is-left .runner-dog { transform: scaleX(-1); }
+.runner .leg, .runner .tail { transform-box: fill-box; }
+.runner .leg { transform-origin: 50% 0; }
+.runner .tail { transform-origin: 100% 100%; animation: runner-wag 1.1s ease-in-out infinite alternate; }
+.runner.is-running .leg-a { animation: runner-leg 300ms ease-in-out infinite alternate; }
+.runner.is-running .leg-b { animation: runner-leg 300ms ease-in-out infinite alternate-reverse; }
+.runner.is-running .dog { animation: runner-bob 300ms ease-in-out infinite alternate; }
+.runner.is-caught .tail { animation-duration: 260ms; }
+.runner .disc { display: none; }
+.runner.is-caught .disc { display: inline; }
+.runner-frisbee {
+  position: absolute; left: calc(100% + 10px); bottom: 24px;
+  width: 20px; height: 6px; border-radius: 50%;
+  background: #E8692F; box-shadow: inset 0 -1.5px 0 rgba(0,0,0,.18), 0 6px 6px -4px rgba(64,42,25,.25);
+  animation: runner-float 1400ms ease-in-out infinite alternate;
+  transition: opacity 300ms;
+}
+.runner.is-left .runner-frisbee { left: auto; right: calc(100% + 10px); }
+.runner.is-caught .runner-frisbee { opacity: 0; }
+@keyframes runner-leg { from { transform: rotate(30deg); } to { transform: rotate(-30deg); } }
+@keyframes runner-bob { from { transform: translateY(0); } to { transform: translateY(-2.5px); } }
+@keyframes runner-wag { from { transform: rotate(-10deg); } to { transform: rotate(12deg); } }
+@keyframes runner-float { from { transform: translateY(0) rotate(-8deg); } to { transform: translateY(-8px) rotate(6deg); } }
+@media (max-width: 640px) {
+  .runner-dog { width: 46px; }
+  .runner-frisbee { width: 16px; height: 5px; bottom: 19px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .runner.is-ready .runner-go { transition: none; }
+  .runner *, .runner .tail { animation: none !important; }
+}
+

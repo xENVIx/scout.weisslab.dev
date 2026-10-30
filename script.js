@@ -1449,6 +1449,91 @@ function soundButton(v) {
   });
 })();
 
+/* A little Scout along the bottom of the screen, chasing a frisbee. How far
+   across he is follows how far through the page you are: each section is
+   a stretch of the way, and scrolling down inside one moves him along it,
+   so he gets to the next section's spot as you get there. On the last
+   section (Messages) he has caught it. He runs while he's moving (turned
+   round to go back), and otherwise stands facing the frisbee, wagging. Only with the
+   scenes; drawn in SVG, sized and animated in style.css (.runner). */
+(function scoutRun() {
+  var RUN_MS = 1200; // as long as .runner-go's transition in style.css
+  var scenes = Array.prototype.slice.call(document.querySelectorAll(".scene"));
+  if (scenes.length < 2 || !document.documentElement.classList.contains("scenes")) return;
+  var sidenav = document.getElementById("sidenav"), dots = document.querySelector(".scene-dots");
+  var runner = document.createElement("div");
+  runner.className = "runner";
+  runner.setAttribute("aria-hidden", "true");
+  // Golden, feathery tail and chest, a floppy ear, and the teal tag he wears
+  // in the title photo; .disc is the frisbee in his mouth once caught.
+  runner.innerHTML = '<div class="runner-go"><svg class="runner-dog" viewBox="0 0 70 42" width="70" height="42">' +
+    '<g class="dog">' +
+    '<path class="tail" d="M16 16C10 13 6 9 2.5 3.5 2 9 4 13.5 7 16.5 5 16.8 3 17.6 1.6 19 6 21.5 11.5 21.2 16.5 20z" fill="#C98C40"/>' +
+    '<rect class="leg leg-b" x="21" y="23" width="4.2" height="16" rx="2.1" fill="#B97C38"/>' +
+    '<rect class="leg leg-a" x="44" y="23" width="4.2" height="16" rx="2.1" fill="#B97C38"/>' +
+    '<path d="M19 27q2.5 4.5 5 1.5 2.5 4.5 5 1.5 2.5 4.5 5 1.5 2.5 4 5 1L40 25 20 25z" fill="#E6B46A"/>' +
+    '<ellipse cx="31" cy="21" rx="17" ry="8.5" fill="#D9A15A"/>' +
+    '<path d="M40 16C42 9 46 5 51 5l3.5 9c-3.5 3-7 7-8.5 11z" fill="#D9A15A"/>' +
+    '<path d="M45 13c5 3.5 5.5 11 1 16.5-2-3-3.5-8-4-12.5z" fill="#E6B46A"/>' +
+    '<ellipse cx="53.5" cy="10" rx="7.5" ry="6.5" fill="#D9A15A"/>' +
+    '<path d="M57.5 8.6c4.6-.4 8.6 1.2 8.6 3.9 0 2.6-4 3.6-8.6 3.1z" fill="#D9A15A"/>' +
+    '<path d="M60 14.6c1.8.5 3.6.4 5-.3" stroke="#8A5A28" stroke-width=".7" fill="none" stroke-linecap="round"/>' +
+    '<circle cx="65.7" cy="11.3" r="1.7" fill="#3A2A20"/>' +
+    '<circle cx="56" cy="8.2" r="1.15" fill="#3A2A20"/>' +
+    '<path d="M50 4.5c-4 .3-5.3 6.5-4.4 11.8.6 2.4 3.8 2.7 4.8 0 1.3-3.4 1.5-8.5-.4-11.8z" fill="#B97C38"/>' +
+    '<path d="M46.6 16.6l3.9-3.4" stroke="#2E9C9C" stroke-width="1.7" stroke-linecap="round"/>' +
+    '<circle cx="47.6" cy="18.6" r="1.6" fill="#2E9C9C"/>' +
+    '<rect class="leg leg-a" x="17" y="24" width="4.6" height="15.5" rx="2.3" fill="#D9A15A"/>' +
+    '<rect class="leg leg-b" x="40.5" y="24" width="4.6" height="15.5" rx="2.3" fill="#D9A15A"/>' +
+    '<ellipse class="disc" cx="64" cy="15.5" rx="6.5" ry="2.2" fill="#E8692F"/>' +
+    '</g></svg><i class="runner-frisbee"></i></div>';
+  document.body.appendChild(runner);
+  var go = runner.firstChild, dog = go.firstChild;
+  var x = null, facing = 1, stopTimer = null;
+
+  // 0 at the top of the first section, 1 on the last.
+  function progress() {
+    var i = 0;
+    scenes.forEach(function (s, j) { if (s.classList.contains("is-active")) i = j; });
+    if (i >= scenes.length - 1) return 1;
+    var s = scenes[i], room = s.scrollHeight - s.clientHeight;
+    var f = room > 4 ? Math.min(1, Math.max(0, s.scrollTop / room)) : 0;
+    return (i + f) / (scenes.length - 1);
+  }
+  function update() {
+    var p = progress();
+    var left = (sidenav ? sidenav.offsetWidth : 0) + 10;
+    var right = (dots ? window.innerWidth - dots.getBoundingClientRect().left : 0) + 10;
+    var lead = 46; // room for the frisbee ahead of him
+    var nx = Math.round(left + p * Math.max(0, window.innerWidth - left - right - dog.getBoundingClientRect().width - lead));
+    runner.classList.toggle("is-caught", p >= 1);
+    if (x !== null && Math.abs(nx - x) > 1) {
+      facing = nx > x ? 1 : -1;
+      runner.classList.add("is-running");
+      clearTimeout(stopTimer);
+      stopTimer = setTimeout(function () {
+        runner.classList.remove("is-running");
+        facing = 1; // stopped: back to facing the frisbee (or, caught, the way he came)
+        runner.classList.remove("is-left");
+      }, RUN_MS);
+    }
+    runner.classList.toggle("is-left", facing < 0);
+    x = nx;
+    go.style.transform = "translateX(" + nx + "px)";
+  }
+  var queued = false;
+  function soon() {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(function () { queued = false; update(); });
+  }
+  update();
+  requestAnimationFrame(function () { runner.classList.add("is-ready"); }); // no run in on load
+  document.addEventListener("scenechange", soon);
+  scenes.forEach(function (s) { s.addEventListener("scroll", soon, { passive: true }); });
+  window.addEventListener("resize", soon);
+})();
+
 /* Messages: visitors leave a note for Scout, up to MAX_FILES photos, GIFs
    and videos, or both (the note is optional with a file). New ones are
    held until approved at /messages-admin (server/messages.js), so the form
