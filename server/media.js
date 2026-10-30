@@ -25,7 +25,7 @@
    memorial.txt is the Memorial
    section's text, edited in a box at the bottom of the page (paragraphs
    separated by blank lines). memories.json is the Memories section, a list
-   of {title, text, photo}, edited in its own box. captions.txt holds each file's optional
+   of {title, text, photos} (photos: files, the first the main one), edited in its own box. captions.txt holds each file's optional
    caption ("<file>=<caption>"), and order.txt the display order the owner
    set by dragging (files it doesn't name follow, by filename). settings.txt
    holds "slide_seconds=<n>", how long each photo shows in Moments.
@@ -82,6 +82,7 @@ var SLIDES_LIST = "slideshow.txt"; // what's in Moments (once "the slideshow")
 var OLD_MOMENTS_LIST = "moments.txt"; // GIFs and videos, before Moments and the slideshow became one; merged into SLIDES_LIST on start
 var MEMORIES_FILE = "memories.json";
 var MAX_MEMORIES = 100, MAX_MEMORY_TITLE = 120, MAX_MEMORY_TEXT = 6000; // characters
+var MAX_MEMORY_PHOTOS = 30; // pictures per memory
 var TRANSITIONS_FILE = "transitions.txt";
 // The page's sections in order, by their data-anchor (the intro's id is
 // "top"); a transition plays between one and the next, either way.
@@ -204,11 +205,17 @@ function writeCaptions(caps) {
     .map(function (f) { return f + "=" + caps[f] + "\n"; }).join(""));
 }
 
-// The Memories section: [{ title, text, photo }], photo a file in media/ or "".
+// The Memories section: [{ title, text, photos }], photos files in media/
+// (photos, GIFs or videos), the first the main one. Older entries have a
+// single "photo" (a file or ""), read as photos.
 function readMemories() {
   try {
     var list = JSON.parse(fs.readFileSync(filePath(MEMORIES_FILE), "utf8"));
-    return Array.isArray(list) ? list : [];
+    return (Array.isArray(list) ? list : []).map(function (m) {
+      m = m || {};
+      var photos = Array.isArray(m.photos) ? m.photos : m.photo ? [m.photo] : [];
+      return { title: String(m.title || ""), text: String(m.text || ""), photos: photos.filter(function (f) { return typeof f === "string" && f; }) };
+    });
   } catch (e) { if (e.code !== "ENOENT") console.error(e); return []; }
 }
 function writeMemories(list) {
@@ -308,7 +315,11 @@ function forgetFile(file, renamedTo) {
     writeCaptions(caps);
   }
   var memories = readMemories(), changed = false;
-  memories.forEach(function (m) { if (m.photo === file) { m.photo = renamedTo || ""; changed = true; } });
+  memories.forEach(function (m) {
+    if (m.photos.indexOf(file) < 0) return;
+    m.photos = m.photos.map(function (f) { return f === file ? renamedTo : f; }).filter(Boolean);
+    changed = true;
+  });
   if (changed) writeMemories(memories);
   var memorial = "";
   try { memorial = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8"); } catch (e) { if (e.code !== "ENOENT") throw e; }
@@ -602,10 +613,11 @@ function action(req, res) {
         var title = String(m.title || "").replace(/\s+/g, " ").trim().slice(0, MAX_MEMORY_TITLE);
         var text = String(m.text || "").replace(/\r\n?/g, "\n").split(/\n\s*\n/)
           .map(function (p) { return p.replace(/[ \t]+\n/g, "\n").trim(); }).filter(Boolean).join("\n\n");
-        var photo = String(m.photo || "");
-        if (photo && (!validFile(photo) || !fs.existsSync(filePath(photo)))) photo = "";
+        var photos = (Array.isArray(m.photos) ? m.photos : m.photo ? [m.photo] : []).map(String)
+          .filter(function (p, j, all) { return all.indexOf(p) === j && validFile(p) && fs.existsSync(filePath(p)); });
         if (text.length > MAX_MEMORY_TEXT) tooLong = tooLong || "Memory " + (i + 1) + " is too long (" + MAX_MEMORY_TEXT + " characters max).";
-        if (title || text || photo) clean.push({ title: title, text: text, photo: photo });
+        if (photos.length > MAX_MEMORY_PHOTOS) tooLong = tooLong || "Memory " + (i + 1) + " has more than " + MAX_MEMORY_PHOTOS + " pictures.";
+        if (title || text || photos.length) clean.push({ title: title, text: text, photos: photos });
       });
       if (tooLong) return json(res, 400, { error: tooLong });
       try { writeMemories(clean); } catch (e) { console.error(e); return json(res, 500, { error: "Couldn’t save: " + e.code }); }
@@ -738,7 +750,7 @@ function hubPage(res, msg) {
       '<div class="sub">' +
       card("/media-admin#title-photo", "Title page photo", "The big photo on the first page.") +
       card("/media-admin#memorial", "Memorial text", "The words in the Memorial section.") +
-      card("/media-admin#memories", "Memories", "The little stories in the Memories section, each with a photo.") +
+      card("/media-admin#memories", "Memories", "The little stories in the Memories section, with their photos, GIFs and videos.") +
       card("/media-admin#slideshow", "Moments timing", "How long each photo shows in Moments.") +
       '</div>' +
       '<h2>You</h2>' +
@@ -860,9 +872,15 @@ function adminPage(req, res, query) {
     '.pv-box{position:relative;overflow:hidden;border:1px solid #DBC8AE;border-radius:6px;background:#E9DECD}.pv-box iframe{position:absolute;top:0;border:0;transform-origin:0 0;background:#FAF4EA;box-shadow:0 0 0 1px #DBC8AE}' +
     '.frames{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px}.frames button{padding:5px 10px;font-size:12px}.frames .lab{margin-right:4px}' +
     '.mem{border:1px solid #DBC8AE;border-radius:6px;background:#FFFDF8;padding:12px;margin-bottom:12px;font:14px system-ui,sans-serif}' +
-    '.mem-top{display:flex;gap:12px;align-items:flex-start}.mem-photo{flex:none;width:96px;height:96px;padding:0;border-radius:6px;overflow:hidden;display:grid;place-items:center;background:#F3E8D8;font-size:12px;color:#6B5748}' +
-    '.mem-photo img{width:100%;height:100%;object-fit:cover;display:block}.mem-fields{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}' +
-    '.mem input.mem-title{width:100%;box-sizing:border-box;font:600 16px Georgia,serif;padding:6px 8px;border:1px solid #DBC8AE;border-radius:4px}' +
+    '.mem-pics{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.mem-pic{position:relative;width:96px;display:flex;flex-direction:column;gap:3px}' +
+    '.mem-pic img,.mem-pic video{width:96px;height:96px;object-fit:cover;border-radius:5px;display:block;background:#F3E8D8}.mem-pic.is-main img,.mem-pic.is-main video{outline:2px solid #A8571F;outline-offset:1px}' +
+    '.mem-main{position:absolute;top:4px;left:4px;padding:1px 6px;border-radius:3px;background:#A8571F;color:#fff;font-size:10px;font-weight:600}' +
+    '.mem-pic-tools{display:flex;gap:2px;justify-content:center}.mem-pic-tools button{padding:2px 0;flex:1;font-size:12px;min-width:0}' +
+    '.mem-add-pic{width:96px;height:96px;padding:4px;border-radius:6px;border:1px dashed #DBC8AE;background:#F3E8D8;color:#6B5748;font-size:12px}' +
+    '.mem-pick .photo-grid{max-height:360px;overflow-y:auto}.mem-pick .photo-grid video{width:100%;aspect-ratio:1;object-fit:cover;border-radius:3px;display:block}' +
+    '.mem-pick button.is-picked{outline:3px solid #A8571F;outline-offset:-1px}.mem-pick button.is-picked::after{content:attr(data-n);position:absolute;top:6px;right:6px;min-width:20px;height:20px;border-radius:999px;background:#A8571F;color:#fff;font-size:11px;font-weight:600;display:grid;place-items:center}' +
+    '.mem-pick-done{padding:3px 12px;font-size:12px;margin-left:6px}' +
+    '.mem input.mem-title{width:100%;box-sizing:border-box;margin-top:4px;font:600 16px Georgia,serif;padding:6px 8px;border:1px solid #DBC8AE;border-radius:4px}' +
     '.mem textarea{box-sizing:border-box;width:100%;min-height:120px;font:16px/1.55 Georgia,serif;padding:8px 10px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;resize:vertical;margin-top:8px}' +
     '.mem-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.mem-tools button{padding:4px 10px;font-size:12px}.mem-num{color:#6B5748;font-weight:600;margin-right:auto}' +
     '.mem .photo-pick{margin-top:8px}.nophoto{display:grid;place-items:center;aspect-ratio:1;border:1px dashed #DBC8AE;border-radius:3px;color:#6B5748}' +
@@ -931,8 +949,8 @@ function adminPage(req, res, query) {
     '<div class="pv-box" id="pv-box"><iframe id="memorial-frame" src="/memorial-preview.html" title="Preview of the Memorial section"></iframe></div>' +
     '<p class="hint">Tap a photo in the preview to pick it.</p>' +
     '<h2 id="memories">Memories</h2>' +
-    '<p class="hint">The little stories in the Memories section: each one is a card with its photo and title, and opens to the whole story when tapped. ' +
-    'Blank lines separate paragraphs; **stars** make words bold, *one star* italic. Use the arrows to change the order. Nothing changes on the site until you press <b>Save memories</b>.</p>' +
+    '<p class="hint">The little stories in the Memories section: each one is a card with its main picture and title, and opens to the whole story when tapped. A memory can have up to 30 pictures (photos, GIFs or videos): the one marked <b>Main</b> is on its card (a GIF or video shows there as a still), and with more than one they play as a slideshow above the story. Under each picture, ★ makes it the main one, ← → move it and ✕ takes it off. ' +
+    'Blank lines separate paragraphs; **stars** make words bold, *one star* italic. ↑ ↓ change the order of the memories. Nothing changes on the site until you press <b>Save memories</b>.</p>' +
     '<div id="memories-editor" class="memories-editor"></div>' +
     '<p><button type="button" id="mem-add">+ Add a memory</button></p>' +
     '<p><button type="button" class="primary" id="mem-save">Save memories</button> <span class="saved" id="mem-saved" aria-live="polite"></span></p>' +
@@ -952,9 +970,15 @@ function photoButtons(files) {
       (GIF_EXT.test(f.name) ? '<span class="gif-badge">GIF</span>' : '') + '<span>' + esc(f.name) + '</span></button>';
   }).join("");
 }
+// The pictures for a memory: photos, GIFs (badged) and videos (a frame
+// half a second in, badged); adminClient numbers the ones it has.
 function photoGridHtml(files) {
-  return '<div class="photo-pick mem-pick"><p class="hint">Tap a photo for this memory.</p><div class="photo-grid">' +
-    '<button type="button" data-file=""><span class="nophoto">No photo</span><span>No photo</span></button>' + photoButtons(files) + '</div></div>';
+  var videos = files.filter(function (f) { return VIDEO_EXT.test(f.name); }).map(function (f) {
+    return '<button type="button" data-file="' + esc(f.name) + '" title="' + esc(f.name) + '"><video src="' + esc("/media/" + encodeURIComponent(f.name)) + '#t=0.5" preload="metadata" muted playsinline></video>' +
+      '<span class="gif-badge">VIDEO</span><span>' + esc(f.name) + '</span></button>';
+  }).join("");
+  return '<div class="photo-pick mem-pick"><p class="hint">Tap photos, GIFs or videos to add them to this memory, in the order you tap them (tap one again to take it off). ' +
+    '<button type="button" class="mem-pick-done">Done</button></p><div class="photo-grid">' + photoButtons(files) + videos + '</div></div>';
 }
 
 // The Frame buttons for a memorial photo (adminClient marks the current one).
@@ -1380,13 +1404,25 @@ function adminClient() {
     });
   }
 
-  // The memories editor: one box per memory (photo, title, story), built
+  // The memories editor: one box per memory (title, pictures, story), built
   // from #memories-data; Save sends them all as JSON.
   var memBox = document.getElementById("memories-editor");
   if (memBox) {
     var memories = JSON.parse(document.getElementById("memories-data").textContent || "[]");
     var memSaved = JSON.stringify(memories), memNote = document.getElementById("mem-saved");
     var memPickTpl = document.getElementById("mem-photos");
+    var memOpen = null; // the memory whose picture grid is open
+    memories.forEach(function (m) { m.photos = Array.isArray(m.photos) ? m.photos : m.photo ? [m.photo] : []; delete m.photo; });
+    memSaved = JSON.stringify(memories);
+    // A small picture of a file: a video's frame half a second in.
+    var memThumb = function (f) {
+      var el = document.createElement(/\.(mp4|webm|mov|m4v)$/i.test(f) ? "video" : "img");
+      el.src = "/media/" + encodeURIComponent(f) + (el.tagName === "VIDEO" ? "#t=0.5" : "");
+      if (el.tagName === "VIDEO") { el.muted = true; el.preload = "metadata"; el.setAttribute("playsinline", ""); }
+      else el.alt = f;
+      el.title = f;
+      return el;
+    };
     var memDirty = function () {
       memNote.className = "saved";
       memNote.textContent = JSON.stringify(memories) === memSaved ? "" : "Not saved yet";
@@ -1424,21 +1460,6 @@ function adminClient() {
         });
         box.appendChild(tools);
 
-        var top = document.createElement("div");
-        top.className = "mem-top";
-        var photo = document.createElement("button");
-        photo.type = "button";
-        photo.className = "mem-photo";
-        photo.title = "Choose a photo";
-        if (m.photo) {
-          var img = document.createElement("img");
-          img.src = "/media/" + encodeURIComponent(m.photo);
-          img.alt = m.photo;
-          photo.appendChild(img);
-        } else photo.textContent = "Add a photo";
-        top.appendChild(photo);
-        var fields = document.createElement("div");
-        fields.className = "mem-fields";
         var title = document.createElement("input");
         title.className = "mem-title";
         title.maxLength = 120;
@@ -1446,13 +1467,49 @@ function adminClient() {
         title.value = m.title || "";
         title.setAttribute("aria-label", "Title of memory " + (i + 1));
         title.addEventListener("input", function () { m.title = title.value; memDirty(); });
-        fields.appendChild(title);
-        var file = document.createElement("div");
-        file.className = "hint";
-        file.textContent = m.photo ? m.photo : "No photo (tap the square to pick one)";
-        fields.appendChild(file);
-        top.appendChild(fields);
-        box.appendChild(top);
+        box.appendChild(title);
+
+        // Its pictures, in order, the first the main one (on the card);
+        // each can be made the main one, moved or taken off.
+        var pics = document.createElement("div");
+        pics.className = "mem-pics";
+        var redraw = function () { drawMemories(); memDirty(); };
+        m.photos.forEach(function (f, j) {
+          var pic = document.createElement("div");
+          pic.className = "mem-pic" + (j === 0 ? " is-main" : "");
+          pic.appendChild(memThumb(f));
+          if (j === 0) {
+            var main = document.createElement("span");
+            main.className = "mem-main";
+            main.textContent = "Main";
+            pic.appendChild(main);
+          }
+          var row = document.createElement("div");
+          row.className = "mem-pic-tools";
+          [["★", "Make this the main picture", j > 0, function () { m.photos.unshift(m.photos.splice(j, 1)[0]); }],
+           ["←", "Move left", j > 0, function () { m.photos.splice(j - 1, 0, m.photos.splice(j, 1)[0]); }],
+           ["→", "Move right", j < m.photos.length - 1, function () { m.photos.splice(j + 1, 0, m.photos.splice(j, 1)[0]); }],
+           ["✕", "Take this picture off", true, function () { m.photos.splice(j, 1); }]
+          ].forEach(function (t) {
+            if (!t[2] && t[0] === "★") return;
+            var b = document.createElement("button");
+            b.type = "button";
+            b.textContent = t[0];
+            b.title = t[1];
+            b.setAttribute("aria-label", t[1] + " (" + f + ")");
+            b.disabled = !t[2];
+            b.addEventListener("click", function () { t[3](); redraw(); });
+            row.appendChild(b);
+          });
+          pic.appendChild(row);
+          pics.appendChild(pic);
+        });
+        var add = document.createElement("button");
+        add.type = "button";
+        add.className = "mem-add-pic";
+        add.textContent = m.photos.length ? "+ Add more" : "+ Add pictures";
+        pics.appendChild(add);
+        box.appendChild(pics);
 
         var text = document.createElement("textarea");
         text.maxLength = 6000;
@@ -1462,26 +1519,47 @@ function adminClient() {
         text.addEventListener("input", function () { m.text = text.value; memDirty(); });
         box.appendChild(text);
 
-        // Tapping the square opens a grid of photos under this memory.
-        photo.addEventListener("click", function () {
-          var open = box.querySelector(".mem-pick");
-          if (open) return box.removeChild(open);
+        // "Add" opens a grid of photos, GIFs and videos under the pictures:
+        // tapping one adds it (at the end) or, if it's already in, takes it off.
+        var openPick = function () {
           var pick = memPickTpl.content.firstElementChild.cloneNode(true);
+          var mark = function () {
+            pick.querySelectorAll("button[data-file]").forEach(function (b) {
+              var n = m.photos.indexOf(b.getAttribute("data-file"));
+              b.classList.toggle("is-picked", n >= 0);
+              b.setAttribute("data-n", n >= 0 ? n + 1 : "");
+            });
+          };
           pick.addEventListener("click", function (e) {
+            if (e.target.closest(".mem-pick-done")) { memOpen = null; return drawMemories(); }
             var b = e.target.closest("button[data-file]");
             if (!b) return;
-            m.photo = b.getAttribute("data-file");
+            var f = b.getAttribute("data-file"), n = m.photos.indexOf(f);
+            if (n >= 0) m.photos.splice(n, 1);
+            else if (m.photos.length >= 30) return alert("That’s 30 pictures, the most one memory can have.");
+            else m.photos.push(f);
+            memOpen = m;
+            var y = pick.querySelector(".photo-grid").scrollTop;
             drawMemories();
             memDirty();
+            var again = memBox.querySelector(".mem-pick .photo-grid");
+            if (again) again.scrollTop = y;
           });
-          top.insertAdjacentElement("afterend", pick);
+          mark();
+          pics.insertAdjacentElement("afterend", pick);
+        };
+        add.addEventListener("click", function () {
+          if (memOpen === m) { memOpen = null; return drawMemories(); }
+          memOpen = m;
+          drawMemories();
         });
+        if (memOpen === m) openPick();
         memBox.appendChild(box);
       });
     };
     drawMemories();
     document.getElementById("mem-add").addEventListener("click", function () {
-      memories.push({ title: "", text: "", photo: "" });
+      memories.push({ title: "", text: "", photos: [] });
       drawMemories();
       memDirty();
       var boxes = memBox.querySelectorAll(".mem");

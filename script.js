@@ -601,6 +601,29 @@ function windowDots(wrap, dots, current) {
   });
 }
 
+function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+// A video plays muted (browsers only autoplay silent video); this button
+// turns the sound on and off, and follows the player's own mute control too.
+function soundButton(v) {
+  var b = document.createElement("button");
+  b.type = "button";
+  b.className = "sound";
+  b.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 6v4h2.5l3.5 3V3L5 6H2.5Z" fill="currentColor"/><path class="waves" d="M10.6 5.6a3.4 3.4 0 0 1 0 4.8M12.4 3.8a6 6 0 0 1 0 8.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path class="cross" d="m10.5 6 3.5 4m0-4-3.5 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><span></span>';
+  function label() {
+    var on = !v.muted && v.volume > 0;
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.querySelector("span").textContent = on ? "Sound on" : "Tap for sound";
+  }
+  b.addEventListener("click", function () {
+    v.muted = !v.muted;
+    if (!v.muted && !v.volume) v.volume = 1;
+    label();
+  });
+  v.addEventListener("volumechange", label);
+  label();
+  return b;
+}
+
 (function slideshow() {
   var DIR = "media/";
   var AUTOPLAY_MS = 5000; // default; media/settings.txt's slide_seconds overrides it
@@ -860,29 +883,6 @@ function windowDots(wrap, dots, current) {
     else grid.classList.add("masonry");
   }
 
-  function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
-  // A video plays muted (browsers only autoplay silent video); this button
-  // turns the sound on and off, and follows the player's own mute control too.
-  function soundButton(v) {
-    var b = document.createElement("button");
-    b.type = "button";
-    b.className = "sound";
-    b.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 6v4h2.5l3.5 3V3L5 6H2.5Z" fill="currentColor"/><path class="waves" d="M10.6 5.6a3.4 3.4 0 0 1 0 4.8M12.4 3.8a6 6 0 0 1 0 8.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path class="cross" d="m10.5 6 3.5 4m0-4-3.5 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><span></span>';
-    function label() {
-      var on = !v.muted && v.volume > 0;
-      b.setAttribute("aria-pressed", on ? "true" : "false");
-      b.querySelector("span").textContent = on ? "Sound on" : "Tap for sound";
-    }
-    b.addEventListener("click", function () {
-      v.muted = !v.muted;
-      if (!v.muted && !v.volume) v.volume = 1;
-      label();
-    });
-    v.addEventListener("volumechange", label);
-    label();
-    return b;
-  }
-
   // Card i has come to the top of the stack: only its video has controls
   // (and loops, if it's the only card).
   function show(i) {
@@ -1126,26 +1126,107 @@ function windowDots(wrap, dots, current) {
 })();
 
 /* Memories: little stories from media/memories.json ([{ title, text,
-   photo }], edited at /media-admin), as a grid of cards, each its photo and
-   title (or the start of its story, with no photo). Tapping one opens it
-   in #memory-view: the photo, title and whole story, with Previous / Next
-   (and the arrow keys) to go through them; Esc, the × or a tap outside
-   closes it. The story is paragraphs (blank lines) with **bold** and
-   *italic* (memorialInline, memorial.js), always as text, never HTML. */
+   photos }], edited at /media-admin; photos are files in media/ (photos,
+   GIFs or videos), the first the main one; older entries have a single
+   "photo" instead), as a grid of cards, each its main picture and title
+   (or the start of its story, with none). A GIF or video as the main
+   picture shows as a still (still()), a frame a third of the way in (a
+   GIF's first frame where the browser has no ImageDecoder), badged, with a count when there are more.
+   Tapping one opens it in #memory-view: its pictures, title and whole
+   story, with Previous / Next (and the arrow keys) to go through the
+   memories; Esc, the × or a tap outside closes it. More than one picture
+   plays as a slideshow (show()): a photo for slide_seconds
+   (media/settings.txt, as in Moments), a GIF for GIF_PLAYS runs, a video
+   until it ends (muted, with a sound button), with arrows, dots and a
+   progress bar; a swipe on the pictures moves through them. The story is
+   paragraphs (blank lines) with **bold** and *italic* (memorialInline,
+   memorial.js), always as text, never HTML. */
 (function memories() {
+  var DIR = "media/", VIDEO_RE = /\.(mp4|webm|mov|m4v)$/i, GIF_RE = /\.gif$/i;
+  var SLIDE_MS = 5000, GIF_PLAYS = 2, FALLBACK_MS = 5000;
   var grid = document.getElementById("memory-grid"), view = document.getElementById("memory-view");
   if (!grid || !view) return;
   var photoBox = document.getElementById("mv-photo"), titleEl = document.getElementById("mv-title");
   var textEl = document.getElementById("mv-text"), countEl = document.getElementById("mv-count");
   var prevBtn = document.getElementById("mv-prev"), nextBtn = document.getElementById("mv-next"), closeBtn = document.getElementById("mv-close");
   var list = [], current = 0, opener = null;
+  var slides = [], at = 0, timer = null, bar = null, dots = [], dotWrap = null;
   var plain = function (t) { return String(t || "").replace(/\*+/g, "").replace(/\s+/g, " ").trim(); };
+  function kind(f) { return VIDEO_RE.test(f) ? "video" : GIF_RE.test(f) ? "gif" : "photo"; }
+  function url(f) { return DIR + encodeURIComponent(f); }
+  function photosOf(m) {
+    var p = Array.isArray(m.photos) ? m.photos : m.photo ? [m.photo] : [];
+    return p.filter(function (f) { return typeof f === "string" && f; });
+  }
 
-  fetch("media/memories.json", { cache: "no-cache" })
+  fetch(DIR + "settings.txt", { cache: "no-cache" })
+    .then(function (r) { return r.ok ? r.text() : ""; }, function () { return ""; })
+    .then(function (t) {
+      var m = /^\s*slide_seconds\s*=\s*(\d+(?:\.\d+)?)\s*$/m.exec(t);
+      if (m && +m[1] > 0) SLIDE_MS = Math.round(+m[1] * 1000);
+    });
+
+  // A still of a GIF (on a canvas) or a video for its card, a frame a third
+  // of the way in.
+  function still(f, box) {
+    if (kind(f) === "video") {
+      var v = document.createElement("video");
+      v.muted = true;
+      v.playsInline = true;
+      v.preload = "metadata";
+      v.tabIndex = -1;
+      v.setAttribute("aria-hidden", "true");
+      v.addEventListener("loadedmetadata", function () {
+        if (isFinite(v.duration) && v.duration > 0) v.currentTime = v.duration / 3;
+      });
+      whenNear(grid, function () { v.src = url(f) + "#t=0.5"; }); // #t= so iOS shows a frame
+      box.appendChild(v);
+      return;
+    }
+    var c = document.createElement("canvas");
+    function draw(pic, w, h) {
+      c.width = w;
+      c.height = h;
+      c.getContext("2d").drawImage(pic, 0, 0);
+      box.insertBefore(c, box.firstChild);
+    }
+    // The first frame, from an <img> (drawImage takes a GIF's first frame).
+    function first(src) {
+      var img = new Image();
+      img.onload = function () {
+        try { draw(img, img.naturalWidth, img.naturalHeight); }
+        catch (e) { img.alt = ""; box.insertBefore(img, box.firstChild); }
+      };
+      img.src = src;
+    }
+    whenNear(grid, function () {
+      if (!window.ImageDecoder) return first(url(f));
+      // Where the browser can decode a chosen frame, one a third of the way in.
+      fetch(url(f)).then(function (r) { return r.ok ? r.arrayBuffer() : Promise.reject(); }).then(function (buf) {
+        var d = new ImageDecoder({ data: buf, type: "image/gif" });
+        return d.tracks.ready.then(function () {
+          return d.decode({ frameIndex: Math.floor(d.tracks.selectedTrack.frameCount / 3) });
+        }).then(function (res) {
+          draw(res.image, res.image.displayWidth, res.image.displayHeight);
+          res.image.close();
+          d.close();
+        });
+      }).catch(function () { if (!c.parentNode) first(url(f)); });
+    });
+  }
+  function badge(cls, text) {
+    var s = document.createElement("span");
+    s.className = cls;
+    s.setAttribute("aria-hidden", "true");
+    if (text) s.textContent = text;
+    return s;
+  }
+
+  fetch(DIR + "memories.json", { cache: "no-cache" })
     .then(function (r) { return r.ok ? r.json() : []; })
     .catch(function () { return []; })
     .then(function (data) {
-      list = (Array.isArray(data) ? data : []).filter(function (m) { return m && (m.title || m.text || m.photo); });
+      list = (Array.isArray(data) ? data : []).filter(function (m) { return m && (m.title || m.text || photosOf(m).length); });
       if (!list.length) {
         var none = document.createElement("p");
         none.className = "memory-empty";
@@ -1154,45 +1235,171 @@ function windowDots(wrap, dots, current) {
         return;
       }
       list.forEach(function (m, i) {
+        var files = photosOf(m), main = files[0];
         var b = document.createElement("button");
         b.type = "button";
-        b.className = "memory-card" + (m.photo ? "" : " no-photo");
-        if (m.photo) {
+        b.className = "memory-card" + (main ? "" : " no-photo");
+        if (main) {
           var ph = document.createElement("span");
           ph.className = "memory-card-photo";
-          var img = document.createElement("img");
-          img.alt = "";
-          whenNear(grid, function () { img.src = "media/" + encodeURIComponent(m.photo); });
-          ph.appendChild(img);
+          if (kind(main) === "photo") {
+            var img = document.createElement("img");
+            img.alt = "";
+            whenNear(grid, function () { img.src = url(main); });
+            ph.appendChild(img);
+          } else still(main, ph);
+          if (kind(main) === "video") ph.appendChild(badge("play"));
+          else if (kind(main) === "gif") ph.appendChild(badge("memory-card-gif", "GIF"));
+          if (files.length > 1) {
+            var count = badge("memory-card-count");
+            count.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="4.5" y="1.5" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 4.5v8.5a1.5 1.5 0 0 0 1.5 1.5h8.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+            count.appendChild(document.createTextNode(files.length));
+            ph.appendChild(count);
+          }
           b.appendChild(ph);
         }
         var t = document.createElement("span");
         t.className = "memory-card-title";
         t.textContent = m.title || "A memory";
         b.appendChild(t);
-        if (!m.photo && m.text) {
+        if (!main && m.text) {
           var ex = document.createElement("span");
           ex.className = "memory-card-text";
           var words = plain(m.text);
           ex.textContent = words.length > 140 ? words.slice(0, 140).replace(/\s+\S*$/, "") + "…" : words;
           b.appendChild(ex);
         }
+        if (files.length > 1) b.setAttribute("aria-label", (m.title || "A memory") + ", " + files.length + " pictures");
         b.addEventListener("click", function () { opener = b; open(i); });
         grid.appendChild(b);
       });
     });
 
+  // The memory's pictures: one on its own, or a slideshow of them.
+  function stopSlides() {
+    clearTimeout(timer);
+    timer = null;
+    slides.forEach(function (s) { if (s.kind === "video") s.el.pause(); });
+  }
+  function arrow(label, path, dir) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "ss-arrow";
+    b.setAttribute("aria-label", label);
+    b.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="' + path + '" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    b.addEventListener("click", function () { show(at + dir); });
+    return b;
+  }
+  function buildPictures(files, alt) {
+    stopSlides();
+    photoBox.textContent = "";
+    photoBox.hidden = !files.length;
+    photoBox.classList.toggle("is-slides", files.length > 1);
+    var stage = document.createElement("div");
+    stage.className = "mv-stage";
+    photoBox.appendChild(stage);
+    slides = files.map(function (f) {
+      var s = { kind: kind(f), ms: SLIDE_MS, failed: false };
+      s.slide = document.createElement("div");
+      s.slide.className = "mv-slide";
+      var fail = function () {
+        s.failed = true;
+        s.slide.classList.add("is-missing");
+        if (slides[at] === s && slides.length > 1 && !view.hidden) { clearTimeout(timer); timer = setTimeout(function () { show(at + 1); }, FALLBACK_MS); }
+      };
+      if (s.kind === "video") {
+        s.el = document.createElement("video");
+        s.el.muted = true;
+        s.el.playsInline = true;
+        s.el.controls = true;
+        s.el.preload = "metadata";
+        s.el.addEventListener("error", fail);
+        s.el.addEventListener("ended", function () { if (slides[at] === s && slides.length > 1) show(at + 1); });
+        s.el.addEventListener("timeupdate", function () {
+          if (slides[at] === s && bar && s.el.duration) bar.style.width = (100 * s.el.currentTime / s.el.duration) + "%";
+        });
+        s.el.src = url(f);
+        s.slide.appendChild(s.el);
+        s.slide.appendChild(soundButton(s.el));
+      } else {
+        s.el = document.createElement("img");
+        s.el.alt = alt;
+        s.el.onerror = fail;
+        s.el.src = url(f);
+        if (s.kind === "gif") gifLength(url(f)).then(function (ms) { if (ms) s.ms = Math.max(ms * GIF_PLAYS, 2000); });
+        s.slide.appendChild(s.el);
+      }
+      var oops = document.createElement("div");
+      oops.className = "ss-missing";
+      oops.textContent = "Oops, this one didn’t load.";
+      s.slide.appendChild(oops);
+      stage.appendChild(s.slide);
+      return s;
+    });
+    dots = [];
+    bar = null;
+    if (slides.length < 2) return;
+    var progress = document.createElement("div");
+    progress.className = "ss-progress";
+    progress.setAttribute("aria-hidden", "true");
+    bar = document.createElement("i");
+    progress.appendChild(bar);
+    stage.appendChild(progress);
+    var strip = document.createElement("div");
+    strip.className = "mv-strip";
+    dotWrap = document.createElement("div");
+    dotWrap.className = "ss-dots";
+    slides.forEach(function (s, j) {
+      var d = document.createElement("button");
+      d.type = "button";
+      d.setAttribute("aria-label", "Picture " + (j + 1));
+      d.appendChild(document.createElement("i"));
+      d.addEventListener("click", function () { show(j); });
+      dotWrap.appendChild(d);
+      dots.push(d);
+    });
+    strip.appendChild(arrow("Previous picture", "M10 2.5 4.5 8l5.5 5.5", -1));
+    strip.appendChild(dotWrap);
+    strip.appendChild(arrow("Next picture", "M6 2.5 11.5 8 6 13.5", 1));
+    photoBox.appendChild(strip);
+  }
+  // Picture i on top, and its time (or its video) started.
+  function show(i) {
+    var n = slides.length;
+    if (!n) return;
+    at = (i + n) % n;
+    clearTimeout(timer);
+    slides.forEach(function (s, j) {
+      s.slide.classList.toggle("is-on", j === at);
+      if (s.kind === "video" && j !== at) s.el.pause();
+    });
+    dots.forEach(function (d, j) { d.setAttribute("aria-current", j === at ? "true" : "false"); });
+    if (dotWrap && dots.length) windowDots(dotWrap, dots, at);
+    var s = slides[at];
+    if (n < 2) {
+      if (s.kind === "video") { s.el.loop = true; play(s.el); }
+      return;
+    }
+    bar.style.transition = "none";
+    bar.style.width = "0";
+    if (s.kind === "video" && !s.failed) {
+      s.el.currentTime = 0;
+      play(s.el);
+      void bar.offsetWidth;
+      bar.style.transition = "";
+      return;
+    }
+    var ms = s.failed ? FALLBACK_MS : s.ms;
+    void bar.offsetWidth;
+    bar.style.transition = "width " + ms + "ms linear";
+    bar.style.width = "100%";
+    timer = setTimeout(function () { show(at + 1); }, ms);
+  }
+
   function open(i) {
     current = (i + list.length) % list.length;
     var m = list[current];
-    photoBox.textContent = "";
-    photoBox.hidden = !m.photo;
-    if (m.photo) {
-      var img = document.createElement("img");
-      img.src = "media/" + encodeURIComponent(m.photo);
-      img.alt = m.title || "Scout";
-      photoBox.appendChild(img);
-    }
+    buildPictures(photosOf(m), m.title || "Scout");
     titleEl.textContent = m.title || "";
     titleEl.hidden = !m.title;
     textEl.textContent = "";
@@ -1207,9 +1414,11 @@ function windowDots(wrap, dots, current) {
     var wasHidden = view.hidden;
     view.hidden = false;
     view.querySelector(".mv-card").scrollTop = 0;
+    show(0);
     if (wasHidden) closeBtn.focus();
   }
   function shut() {
+    stopSlides();
     view.hidden = true;
     if (opener) opener.focus();
   }
@@ -1223,14 +1432,20 @@ function windowDots(wrap, dots, current) {
     else if (e.key === "ArrowLeft") open(current - 1);
     else if (e.key === "ArrowRight") open(current + 1);
   });
-  // A swipe left or right goes to the next or previous one.
-  var touchX = null;
-  view.addEventListener("touchstart", function (e) { touchX = e.touches[0].clientX; }, { passive: true });
+  // A swipe left or right goes to the next or previous memory, or, on a
+  // slideshow's pictures, picture.
+  var touchX = null, onPictures = false;
+  view.addEventListener("touchstart", function (e) {
+    touchX = e.touches[0].clientX;
+    onPictures = slides.length > 1 && photoBox.contains(e.target);
+  }, { passive: true });
   view.addEventListener("touchend", function (e) {
-    if (touchX === null || list.length < 2) return;
+    if (touchX === null) return;
     var dx = e.changedTouches[0].clientX - touchX;
-    if (Math.abs(dx) > 60) open(current + (dx < 0 ? 1 : -1));
     touchX = null;
+    if (Math.abs(dx) <= 60) return;
+    if (onPictures) show(at + (dx < 0 ? 1 : -1));
+    else if (list.length > 1) open(current + (dx < 0 ? 1 : -1));
   });
 })();
 

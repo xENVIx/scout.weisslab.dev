@@ -354,13 +354,13 @@ html.is-loading body > * { visibility: hidden !important; }
 }
 .photo-grid button:hover img, .photo-grid button:hover video { transform: scale(1.04); }
 /* Play badge on video tiles: a soft dark circle with a white triangle. */
-.photo-grid .play {
+.photo-grid .play, .memory-card-photo .play {
   position: absolute; left: 50%; top: 50%;
   width: 44px; height: 44px; margin: -22px 0 0 -22px;
   border-radius: 999px; background: rgba(20,15,10,.55);
   pointer-events: none;
 }
-.photo-grid .play::after {
+.photo-grid .play::after, .memory-card-photo .play::after {
   content: ""; position: absolute; left: 17px; top: 13px;
   border-style: solid; border-width: 9px 0 9px 15px;
   border-color: transparent transparent transparent #fff;
@@ -460,8 +460,17 @@ html.is-loading body > * { visibility: hidden !important; }
 }
 .memory-card:hover, .memory-card:focus-visible { transform: translateY(-3px); box-shadow: 0 2px 4px rgba(64,42,25,.08), 0 14px 32px rgba(64,42,25,.16); }
 .memory-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.memory-card-photo { display: block; aspect-ratio: 4 / 3; overflow: hidden; border-radius: 2px; background: #EFE3D2; }
-.memory-card-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.memory-card-photo { position: relative; display: block; aspect-ratio: 4 / 3; overflow: hidden; border-radius: 2px; background: #EFE3D2; }
+.memory-card-photo img, .memory-card-photo canvas, .memory-card-photo video { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+/* A GIF or video as the main picture is a still of it, marked; and how many
+   pictures there are, when there's more than one. */
+.memory-card-gif, .memory-card-count {
+  position: absolute; display: flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 999px; background: rgba(20,15,10,.6); color: #FFF8EC;
+  font: 600 11px/1.4 var(--sans); letter-spacing: .08em; pointer-events: none;
+}
+.memory-card-gif { left: 8px; top: 8px; }
+.memory-card-count { right: 8px; bottom: 8px; }
 .memory-card-title {
   display: block; margin-top: 12px; padding: 0 4px;
   font-size: clamp(19px, 2vw, 22px); line-height: 1.3; font-style: italic; font-weight: 400; color: var(--ink-strong);
@@ -498,7 +507,28 @@ html.is-loading body > * { visibility: hidden !important; }
   background: rgba(250,244,234,.92); color: var(--ink); font-size: 26px; line-height: 1; cursor: pointer;
   box-shadow: 0 1px 4px rgba(0,0,0,.2);
 }
-.mv-photo img { display: block; width: 100%; max-height: 60vh; object-fit: cover; }
+/* A memory's pictures: one on its own, or (.is-slides) a slideshow of
+   them, one on top at a time, with arrows and dots under it. */
+.mv-stage { position: relative; isolation: isolate; }
+.mv-photo:not(.is-slides) .mv-slide img { display: block; width: 100%; max-height: 60vh; object-fit: cover; }
+.mv-photo:not(.is-slides) .mv-slide video { display: block; width: 100%; max-height: 60vh; background: #1C1612; }
+.mv-photo.is-slides .mv-stage { aspect-ratio: 4 / 3; max-height: 62vh; width: 100%; overflow: hidden; background: #2A211B; }
+.mv-photo.is-slides .mv-slide {
+  position: absolute; inset: 0; opacity: 0; visibility: hidden;
+  transition: opacity 600ms ease, visibility 0s 600ms;
+}
+.mv-photo.is-slides .mv-slide.is-on { opacity: 1; visibility: visible; z-index: 1; transition: opacity 600ms ease; }
+.mv-photo.is-slides .mv-slide img, .mv-photo.is-slides .mv-slide video { display: block; width: 100%; height: 100%; object-fit: contain; }
+.mv-slide { position: relative; }
+.mv-slide .sound { right: auto; left: 12px; } /* the × is in the top right */
+.mv-slide .ss-missing { display: none; position: absolute; inset: 0; place-items: center; padding: 20px; text-align: center; background: var(--paper); font-family: var(--sans); font-size: 14px; color: var(--ink-mute); }
+.mv-slide.is-missing .ss-missing { display: grid; }
+.mv-photo .ss-progress { z-index: 2; }
+.mv-strip {
+  display: flex; align-items: center; justify-content: center; gap: clamp(10px, 3vw, 22px);
+  padding: 12px clamp(12px, 4vw, 30px) 0;
+}
+.mv-strip .ss-arrow { width: 40px; height: 40px; }
 .mv-photo[hidden] { display: none; }
 .mv-body { padding: clamp(22px, 4vw, 36px) clamp(20px, 5vw, 44px) 8px; }
 .mv-title { margin: 0 44px 14px 0; font-size: clamp(26px, 3.4vw, 34px); line-height: 1.2; font-weight: 400; font-style: italic; color: var(--ink-strong); }
