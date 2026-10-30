@@ -1492,6 +1492,7 @@ function soundButton(v) {
   document.body.appendChild(runner);
   var go = runner.firstChild, dog = go.firstChild;
   var x = null, facing = 1, stopTimer = null, running = false;
+  var lastScene = -1, lastTop = 0; // to tell which way the visitor last went
   var caught = false, jumpTimers = [];
   var JUMP_MS = 700, CATCH_AT_MS = 300; // as runner-jump in style.css; the catch is at its top
   var reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1509,10 +1510,10 @@ function soundButton(v) {
   function where() {
     var i = 0, n = scenes.length;
     scenes.forEach(function (s, j) { if (s.classList.contains("is-active")) i = j; });
-    if (i >= n - 1) return { p: 1, last: true };
     var s = scenes[i], room = s.scrollHeight - s.clientHeight;
+    if (i >= n - 1) return { p: 1, last: true, i: i, top: s.scrollTop };
     var f = room > 4 ? Math.min(1, Math.max(0, s.scrollTop / room)) : 0;
-    return { p: (i + f) / (n - 1), last: false };
+    return { p: (i + f) / (n - 1), last: false, i: i, top: s.scrollTop };
   }
   // A leap up for the frisbee, which comes down to meet him and is in his
   // mouth from the top of the jump (.disc).
@@ -1536,9 +1537,15 @@ function soundButton(v) {
     var lead = 46; // room for the frisbee ahead of him
     var nx = Math.round(left + at.p * Math.max(0, window.innerWidth - left - right - dog.getBoundingClientRect().width - lead));
     if (!at.last && caught) letGo();
-    // He keeps facing the way he last went, the frisbee always ahead of him.
+    // He faces the way the visitor last went (to a later or earlier
+    // section, or scrolling down or up), the frisbee always ahead of him;
+    // not by which way he moves, since a section growing as its photos
+    // load also moves him back a little.
+    if (lastScene >= 0 && at.i !== lastScene) facing = at.i > lastScene ? 1 : -1;
+    else if (lastScene >= 0 && Math.abs(at.top - lastTop) > 2) facing = at.top > lastTop ? 1 : -1;
+    lastScene = at.i;
+    lastTop = at.top;
     if (x !== null && Math.abs(nx - x) > 1) {
-      facing = nx > x ? 1 : -1;
       running = true;
       runner.classList.add("is-running");
       clearTimeout(stopTimer);
