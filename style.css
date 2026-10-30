@@ -5,6 +5,7 @@
   --ink-soft: #4A3B31;
   --ink-mute: #6B5748;
   --paper: #FAF4EA;
+  --runway: 64px; /* the faded strip along the bottom where Scout runs */
   --rule: #E5D6C0;
   --edge: #DBC8AE;
   --accent: #A8571F;
@@ -116,10 +117,12 @@ html.scenes, html.scenes body { height: 100%; overflow: hidden; overscroll-behav
   transition: opacity 650ms ease 380ms, transform 650ms cubic-bezier(.2,.7,.3,1) 380ms, visibility 0s;
 }
 .scenes .scene > * { flex: none; }
+/* Room at the bottom for the running Scout (.runway, .runner). */
+.scenes .scene { padding-bottom: var(--runway); }
 .scenes .scene > :last-child { margin-block: auto; }
 .scenes .band { border-top: 0; }
 /* Keep the whole slideshow (header, photo, caption, controls) on one screen. */
-.scenes #slideshow-stage { max-height: calc(100vh - 428px); min-height: 200px; } /* 48px of it for the stack peeking out */
+.scenes #slideshow-stage { max-height: calc(100vh - 428px - var(--runway)); min-height: 200px; } /* 48px of it for the stack peeking out */
 @media (prefers-reduced-motion: reduce) {
   .scenes .scene { transform: none !important; }
 }
@@ -669,6 +672,25 @@ footer .eyebrow { margin-top: 14px; }
 .runner.is-running .leg-b { animation: runner-leg 300ms ease-in-out infinite alternate-reverse; }
 .runner.is-running .dog { animation: runner-bob 300ms ease-in-out infinite alternate; }
 .runner.is-caught .tail { animation-duration: 260ms; }
+/* The catch: a leap (on .dog, so .is-left's flip still holds), the
+   frisbee coming down to his mouth, as long as JUMP_MS in script.js. */
+.runner .dog { transform-box: fill-box; transform-origin: 50% 100%; }
+.runner.is-jumping .dog { animation: runner-jump 700ms cubic-bezier(.3,.7,.4,1); }
+.runner.is-jumping .runner-frisbee { animation: runner-catch 300ms ease-in forwards; }
+@keyframes runner-jump {
+  0% { transform: translateY(0) rotate(0); }
+  20% { transform: translateY(2px) rotate(0); }
+  45% { transform: translateY(-24px) rotate(-14deg); }
+  80% { transform: translateY(0) rotate(4deg); }
+  100% { transform: translateY(0) rotate(0); }
+}
+@keyframes runner-catch { to { transform: translate(-22px, -20px) rotate(-10deg); } }
+/* The bottom of every section fades into the paper, under Scout. */
+.runway {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 300; height: var(--runway);
+  background: linear-gradient(to bottom, rgba(250,244,234,0), var(--paper) 62%);
+  pointer-events: none;
+}
 .runner .disc { display: none; }
 .runner.is-caught .disc { display: inline; }
 .runner-frisbee {
@@ -679,7 +701,7 @@ footer .eyebrow { margin-top: 14px; }
   transition: opacity 300ms;
 }
 .runner.is-left .runner-frisbee { left: auto; right: calc(100% + 10px); }
-.runner.is-caught .runner-frisbee { opacity: 0; }
+.runner.is-caught .runner-frisbee { opacity: 0; transition-duration: 60ms; }
 @keyframes runner-leg { from { transform: rotate(30deg); } to { transform: rotate(-30deg); } }
 @keyframes runner-bob { from { transform: translateY(0); } to { transform: translateY(-2.5px); } }
 @keyframes runner-wag { from { transform: rotate(-10deg); } to { transform: rotate(12deg); } }

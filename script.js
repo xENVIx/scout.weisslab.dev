@@ -1453,8 +1453,10 @@ function soundButton(v) {
    across he is follows how far through the page you are: each section is
    a stretch of the way, and scrolling down inside one moves him along it,
    so he gets to the next section's spot as you get there. On the last
-   section (Messages) he has caught it. He runs while he's moving (turned
-   round to go back), and otherwise stands facing the frisbee, wagging. Only with the
+   section (Messages) he leaps and catches it. He runs while he's moving,
+   keeps facing the way he last went (the frisbee ahead of him), and
+   otherwise stands wagging. The bottom of each section fades out
+   (.runway) to make room for him. Only with the
    scenes; drawn in SVG, sized and animated in style.css (.runner). */
 (function scoutRun() {
   var RUN_MS = 1200; // as long as .runner-go's transition in style.css
@@ -1489,35 +1491,65 @@ function soundButton(v) {
     '</g></svg><i class="runner-frisbee"></i></div>';
   document.body.appendChild(runner);
   var go = runner.firstChild, dog = go.firstChild;
-  var x = null, facing = 1, stopTimer = null;
+  var x = null, facing = 1, stopTimer = null, running = false;
+  var caught = false, jumpTimers = [];
+  var JUMP_MS = 700, CATCH_AT_MS = 300; // as runner-jump in style.css; the catch is at its top
+  var reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // 0 at the top of the first section, 1 on the last.
-  function progress() {
-    var i = 0;
+  // The bottom of every section fades into the paper (.runway), so he has
+  // room to run without covering anything.
+  var runway = document.createElement("div");
+  runway.className = "runway";
+  runway.setAttribute("aria-hidden", "true");
+  document.body.insertBefore(runway, runner);
+
+  // Where he is: p from 0 at the top of the first section to 1 at the
+  // bottom of the one before last (the same spot as the last), and whether
+  // it's the last one, where he catches the frisbee.
+  function where() {
+    var i = 0, n = scenes.length;
     scenes.forEach(function (s, j) { if (s.classList.contains("is-active")) i = j; });
-    if (i >= scenes.length - 1) return 1;
+    if (i >= n - 1) return { p: 1, last: true };
     var s = scenes[i], room = s.scrollHeight - s.clientHeight;
     var f = room > 4 ? Math.min(1, Math.max(0, s.scrollTop / room)) : 0;
-    return (i + f) / (scenes.length - 1);
+    return { p: (i + f) / (n - 1), last: false };
+  }
+  // A leap up for the frisbee, which comes down to meet him and is in his
+  // mouth from the top of the jump (.disc).
+  function jump() {
+    caught = true;
+    if (reduceMotion) return runner.classList.add("is-caught");
+    runner.classList.add("is-jumping");
+    jumpTimers.push(setTimeout(function () { runner.classList.add("is-caught"); }, CATCH_AT_MS));
+    jumpTimers.push(setTimeout(function () { runner.classList.remove("is-jumping"); }, JUMP_MS));
+  }
+  function letGo() {
+    caught = false;
+    jumpTimers.forEach(clearTimeout);
+    jumpTimers = [];
+    runner.classList.remove("is-caught", "is-jumping");
   }
   function update() {
-    var p = progress();
+    var at = where();
     var left = (sidenav ? sidenav.offsetWidth : 0) + 10;
     var right = (dots ? window.innerWidth - dots.getBoundingClientRect().left : 0) + 10;
     var lead = 46; // room for the frisbee ahead of him
-    var nx = Math.round(left + p * Math.max(0, window.innerWidth - left - right - dog.getBoundingClientRect().width - lead));
-    runner.classList.toggle("is-caught", p >= 1);
+    var nx = Math.round(left + at.p * Math.max(0, window.innerWidth - left - right - dog.getBoundingClientRect().width - lead));
+    if (!at.last && caught) letGo();
+    // He keeps facing the way he last went, the frisbee always ahead of him.
     if (x !== null && Math.abs(nx - x) > 1) {
       facing = nx > x ? 1 : -1;
+      running = true;
       runner.classList.add("is-running");
       clearTimeout(stopTimer);
       stopTimer = setTimeout(function () {
+        running = false;
         runner.classList.remove("is-running");
-        facing = 1; // stopped: back to facing the frisbee (or, caught, the way he came)
-        runner.classList.remove("is-left");
+        if (where().last && !caught) jump();
       }, RUN_MS);
     }
     runner.classList.toggle("is-left", facing < 0);
+    if (at.last && !caught && !running) jump();
     x = nx;
     go.style.transform = "translateX(" + nx + "px)";
   }
