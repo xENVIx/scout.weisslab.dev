@@ -43,9 +43,9 @@ function gifLength(src) {
    so a clip that's needed next never shares the connection. */
 var clipQueue = Promise.resolve();
 
-/* Scenes: the page is full-screen .scene layers (intro, dedication,
-   slideshow, moments, gallery, messages) and scrolling fades between them instead of moving
-   the page. A scene taller than the screen scrolls normally inside itself
+/* Scenes: the page is full-screen .scene layers (intro, dedication, life,
+   memories, moments, gallery, messages) and scrolling fades between them
+   instead of moving the page. A scene taller than the screen scrolls normally inside itself
    and only fades once you're at its top or bottom edge. Wheel, touch swipe,
    keyboard and the nav links all go through go(). .sidenav slides in on
    every scene after the intro (the intro has .topnav instead).
@@ -1120,30 +1120,34 @@ function soundButton(v) {
     .catch(showHero);
 })();
 
-/* The Memorial section's text lives in media/memorial.txt (edited at
+/* The Memorial section's text lives in media/memorial.txt, and Scout's
+   Life's (#life, after it) in media/life.txt (both edited at
    /media-admin), paragraphs separated by blank lines, with **bold**,
    *italic*, "# " headings and (caption[photo.jpg]) photos; memorial.js
-   turns it into DOM nodes (never HTML). #dedication is empty in
-   index.html. Its photos load once the Memorial is near, open in the
+   turns it into DOM nodes (never HTML). Both sections are empty in
+   index.html. Their photos load once the section is near, open in the
    lightbox when clicked, and are left out if the file is gone. */
 (function memorialText() {
-  var section = document.getElementById("dedication");
-  if (!section || typeof renderMemorial !== "function") return;
-  fetch("media/memorial.txt", { cache: "no-cache" })
-    .then(function (r) { return r.ok ? r.text() : ""; })
-    .then(function (t) {
-      if (!memorialBlocks(t).length) return;
-      renderMemorial(t, section, {
-        dir: "media/",
-        setSrc: function (img, url) { whenNear(img, function () { img.src = url; }); },
-        onPhoto: function (fig, url, caption) {
-          fig.querySelector("img").addEventListener("click", function () {
-            if (window.scoutLightbox) window.scoutLightbox(url, false, caption);
-          });
-        }
-      });
-    })
-    .catch(function () {});
+  if (typeof renderMemorial !== "function") return;
+  [["dedication", "memorial.txt"], ["life", "life.txt"]].forEach(function (part) {
+    var section = document.getElementById(part[0]);
+    if (!section) return;
+    fetch("media/" + part[1], { cache: "no-cache" })
+      .then(function (r) { return r.ok ? r.text() : ""; })
+      .then(function (t) {
+        if (!memorialBlocks(t).length) return;
+        renderMemorial(t, section, {
+          dir: "media/",
+          setSrc: function (img, url) { whenNear(img, function () { img.src = url; }); },
+          onPhoto: function (fig, url, caption) {
+            fig.querySelector("img").addEventListener("click", function () {
+              if (window.scoutLightbox) window.scoutLightbox(url, false, caption);
+            });
+          }
+        });
+      })
+      .catch(function () {});
+  });
 })();
 
 /* Memories: little stories from media/memories.json ([{ title, text,
