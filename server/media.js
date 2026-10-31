@@ -74,6 +74,8 @@ var KINDS = [["image", "Images"], ["gif", "GIFs"], ["video", "Videos"], ["other"
 var PAGE_LIST = "page_files.txt";
 var MEMORIAL_FILE = "memorial.txt";
 var LIFE_FILE = "life.txt"; // Scout's Life, the section after the Memorial, written the same way
+var ABOUT_FILE = "about.txt"; // the "About me" card at the start of Scout's Life: "Label: value" lines
+var MAX_ABOUT = 3000; // characters
 // The texts the memorial box edits, by the name its tabs send.
 var TEXTS = { memorial: [MEMORIAL_FILE, "Memorial"], life: [LIFE_FILE, "Scout’s Life"] };
 // A photo's tag in the memorial text, "(caption[file 35% print])",
@@ -96,7 +98,8 @@ var TRANSITIONS = [
   ["life>memories", "Scout’s Life ↔ Memories"],
   ["memories>moments", "Memories ↔ Moments"],
   ["moments>gallery", "Moments ↔ Gallery"],
-  ["gallery>messages", "Gallery ↔ Messages"]
+  ["gallery>messages", "Gallery ↔ Messages"],
+  ["messages>farewell", "Messages ↔ Goodbye"]
 ];
 var CAPTIONS_FILE = "captions.txt";
 var ORDER_LIST = "order.txt";
@@ -105,7 +108,7 @@ var SETTINGS_FILE = "settings.txt";
 var DEFAULT_SLIDE_SECONDS = 5; // script.js uses the same default
 var MAX_SLIDE_SECONDS = 120;
 // Kept in media/ for the page to read, but not media themselves.
-var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, OLD_MOMENTS_LIST, MEMORIES_FILE, TRANSITIONS_FILE, PAGE_LIST, MEMORIAL_FILE, LIFE_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
+var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, OLD_MOMENTS_LIST, MEMORIES_FILE, TRANSITIONS_FILE, PAGE_LIST, MEMORIAL_FILE, LIFE_FILE, ABOUT_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
 
 // ---- names and paths ----
 
@@ -611,6 +614,18 @@ function action(req, res) {
       }
       return send(res, 303, "", { Location: "/media-admin?msg=" + encodeURIComponent(msg) + "&text=" + which + "#memorial" });
     }
+    if (f.action === "about") {
+      var about = String(f.text || "").replace(/\r\n?/g, "\n").split("\n")
+        .map(function (l) { return l.trim(); }).filter(Boolean).join("\n");
+      if (about.length > MAX_ABOUT) msg = "That's too long (" + MAX_ABOUT + " characters max).";
+      else {
+        try {
+          writeFile(ABOUT_FILE, about ? about + "\n" : "");
+          msg = "Saved About me.";
+        } catch (e) { console.error(e); msg = "Couldn't save About me: " + e.code; }
+      }
+      return send(res, 303, "", { Location: "/media-admin?msg=" + encodeURIComponent(msg) + "#about" });
+    }
     // The memories editor saves them all at once and gets JSON back.
     if (f.action === "memories") {
       var list;
@@ -761,6 +776,7 @@ function hubPage(res, msg) {
       card("/media-admin#title-photo", "Title page photo", "The big photo on the first page.") +
       card("/media-admin#memorial", "Memorial text", "The words in the Memorial section.") +
       card("/media-admin?text=life#memorial", "Scout’s Life text", "The words in the Scout’s Life section, after the Memorial.") +
+      card("/media-admin#about", "About me", "The little card of facts about Scout at the start of Scout’s Life.") +
       card("/media-admin#memories", "Memories", "The little stories in the Memories section, with their photos, GIFs and videos.") +
       card("/media-admin#slideshow", "Moments timing", "How long each photo shows in Moments.") +
       '</div>' +
@@ -799,6 +815,8 @@ function adminPage(req, res, query) {
     try { texts[k] = fs.readFileSync(filePath(TEXTS[k][0]), "utf8").trim(); } catch (e) { if (e.code !== "ENOENT") throw e; }
   });
   var textNow = TEXTS[query.get("text")] ? query.get("text") : "memorial";
+  var about = "";
+  try { about = fs.readFileSync(filePath(ABOUT_FILE), "utf8").trim(); } catch (e) { if (e.code !== "ENOENT") throw e; }
 
   function row(f) {
     var url = "/media/" + encodeURIComponent(f.name);
@@ -918,7 +936,7 @@ function adminPage(req, res, query) {
     '.settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:15px system-ui,sans-serif}.settings input{width:80px;margin-left:8px}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
     '</style></head><body><main><form method="post" action="/admin/logout" class="out"><button>Sign out</button></form><p class="jump"><a href="/admin">← Admin</a></p><h1>Scout’s media</h1>' +
-    '<p class="jump"><a href="#title-photo">Title page photo ↓</a> · <a href="#slideshow">Moments timing ↓</a> · <a href="#memorial">Memorial &amp; Scout’s Life text ↓</a> · <a href="#memories">Memories ↓</a></p>' +
+    '<p class="jump"><a href="#title-photo">Title page photo ↓</a> · <a href="#slideshow">Moments timing ↓</a> · <a href="#memorial">Memorial &amp; Scout’s Life text ↓</a> · <a href="#about">About me ↓</a> · <a href="#memories">Memories ↓</a></p>' +
     (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') +
     '<h2>Upload</h2>' +
     '<label class="drop" id="drop">Drop photos or videos here, or click to choose' +
@@ -969,6 +987,11 @@ function adminPage(req, res, query) {
     '<button type="button" data-view="computer">Computer</button><button type="button" data-view="phone">Phone</button></span></div>' +
     '<div class="pv-box" id="pv-box"><iframe id="memorial-frame" src="/memorial-preview.html" title="Preview of the section"></iframe></div>' +
     '<p class="hint">Tap a photo in the preview to pick it.</p>' +
+    '<h2 id="about">About me</h2>' +
+    '<p class="hint">The card of facts about Scout at the start of Scout’s Life (and in the printed keepsake). One line each, like <code>Birthday: September 20, 2014</code>: the part before the colon is the label. The first line, starting with "# ", is the card’s title. **stars** make words bold, *one star* italic. Leave it empty to have no card.</p>' +
+    '<form method="post" class="memorial about-form"><input type="hidden" name="action" value="about">' +
+    '<textarea name="text" aria-label="About me" maxlength="' + MAX_ABOUT + '" style="min-height:260px">' + esc(about) + '</textarea>' +
+    '<button class="primary">Save About me</button></form>' +
     '<h2 id="memories">Memories</h2>' +
     '<p class="hint">The little stories in the Memories section: each one is a card with its main picture and title, and opens to the whole story when tapped. A memory can have up to 30 pictures (photos, GIFs or videos): the one marked <b>Main</b> is on its card (a GIF or video shows there as a still), and with more than one they play as a slideshow above the story. Under each picture, ★ makes it the main one, ← → move it and ✕ takes it off. ' +
     'Blank lines separate paragraphs; **stars** make words bold, *one star* italic. ↑ ↓ change the order of the memories. Nothing changes on the site until you press <b>Save memories</b>.</p>' +

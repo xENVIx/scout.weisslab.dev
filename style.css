@@ -233,6 +233,50 @@ html.is-loading body > * { visibility: hidden !important; }
   font-weight: 300; letter-spacing: -.02em; color: var(--ink-strong);
 }
 
+/* ---- "About me" (renderAbout() in memorial.js, from media/about.txt),
+   at the start of Scout's Life, under its heading ---- */
+.about-card {
+  margin: clamp(26px, 4vw, 40px) 0 0; padding: clamp(20px, 3vw, 30px) clamp(20px, 3.5vw, 36px);
+  border: 1px solid var(--edge); border-radius: 6px; background: #FFFDF8;
+  box-shadow: 0 10px 30px -18px rgba(64,42,25,.35);
+}
+.about-card h4 {
+  margin: 0 0 14px; font-family: var(--sans); font-size: 12px; font-weight: 600;
+  letter-spacing: .22em; text-transform: uppercase; color: var(--accent-dark);
+}
+.about-card dl { margin: 0; display: grid; grid-template-columns: minmax(7.5em, max-content) 1fr; gap: 10px 22px; }
+.about-card dt {
+  font-family: var(--sans); font-size: 13px; font-weight: 600; letter-spacing: .06em;
+  color: var(--ink-mute); padding-top: .3em;
+}
+.about-card dd { margin: 0; font-size: clamp(17px, 1.9vw, 20px); line-height: 1.45; font-weight: 300; color: var(--ink); }
+@media (max-width: 520px) {
+  .about-card dl { grid-template-columns: 1fr; gap: 2px; }
+  .about-card dd { margin-bottom: 10px; }
+}
+
+/* ---- The closing (#farewell), the last scene: centred on the screen ---- */
+.farewell {
+  min-height: 70vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding-top: clamp(44px, 7vw, 88px); padding-bottom: clamp(44px, 7vw, 88px);
+  box-sizing: border-box;
+}
+.scenes .farewell { min-height: 0; } /* the scene centres it already */
+.farewell h2 {
+  margin: clamp(12px, 2vw, 20px) 0 0; font-size: clamp(64px, 11vw, 120px);
+  line-height: .9; font-weight: 300; letter-spacing: -.035em; color: var(--ink-strong);
+}
+.farewell-dates { margin: clamp(16px, 2.5vw, 24px) 0 0; font-family: var(--sans); font-size: 14px; letter-spacing: .12em; color: var(--ink-mute); }
+.farewell-words { margin: clamp(22px, 3.5vw, 34px) 0 0; font-size: clamp(21px, 2.4vw, 27px); font-style: italic; font-weight: 300; color: var(--ink-soft); }
+.farewell-links { margin-top: clamp(30px, 5vw, 48px); display: flex; flex-wrap: wrap; gap: 14px 24px; justify-content: center; align-items: center; }
+.farewell-links a { font: 600 12px var(--sans); letter-spacing: .16em; text-transform: uppercase; color: var(--ink-mute); text-decoration: none; }
+.farewell-links a:hover { color: var(--accent-dark); }
+.farewell-links .farewell-print {
+  padding: 12px 22px; border: 1px solid var(--accent); border-radius: 999px;
+  background: var(--accent); color: #FFF8EC; transition: background 200ms, border-color 200ms;
+}
+.farewell-links .farewell-print:hover { background: var(--accent-dark); border-color: var(--accent-dark); color: #FFF8EC; }
+
 /* ---- Moments (#moments; once the slideshow, so its parts are still ss-*;
    markup in index.html, behaviour in script.js) ---- */
 /* A stack of cards: script.js (cardStack) places each

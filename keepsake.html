@@ -1,0 +1,170 @@
+<!doctype html>
+<!-- A keepsake to print (linked from the closing, "Print a keepsake"): the
+     first page's photo, About me, the Memorial, Scout's Life and the
+     Memories on paper, from the same files as the site (media/page_files.txt,
+     about.txt, memorial.txt, life.txt, memories.json; memorial.js draws the
+     texts). A memory's picture is its first photo or GIF (a GIF prints its
+     first frame; videos are left out). -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<meta name="color-scheme" content="only light" />
+<meta name="darkreader-lock" />
+<title>Scout · A keepsake</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..600;1,6..72,200..600&family=Karla:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="memorial.css" />
+<style>
+  body { background: #EFE6D8; }
+  .ks-bar {
+    position: sticky; top: 0; z-index: 5; display: flex; gap: 12px; justify-content: center; align-items: center;
+    padding: 12px 16px; background: rgba(239,230,216,.94); border-bottom: 1px solid var(--rule);
+    font-family: var(--sans);
+  }
+  .ks-bar a, .ks-bar button {
+    font: 600 12px var(--sans); letter-spacing: .16em; text-transform: uppercase; text-decoration: none;
+    padding: 11px 20px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--edge); background: var(--paper); color: var(--ink-soft);
+  }
+  .ks-bar button { border-color: var(--accent); background: var(--accent); color: #FFF8EC; }
+  .ks-bar button:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+  .ks-bar .ks-note { font-size: 13px; color: var(--ink-mute); }
+  .ks-page {
+    max-width: 780px; margin: 28px auto; padding: clamp(28px, 6vw, 72px) clamp(20px, 6vw, 72px);
+    background: var(--paper); box-shadow: 0 18px 50px -24px rgba(64,42,25,.45);
+  }
+  .ks-page section { background: none; }
+  .ks-cover { text-align: center; padding: clamp(20px, 6vw, 60px) 0; }
+  .ks-cover h1 {
+    margin: 14px 0 0; font-size: clamp(70px, 14vw, 132px); line-height: .85; font-weight: 300;
+    letter-spacing: -.035em; color: var(--ink-strong);
+  }
+  .ks-cover .ks-dates { margin: 18px 0 0; font-family: var(--sans); font-size: 14px; letter-spacing: .12em; color: var(--ink-mute); }
+  .ks-cover img { display: block; width: min(100%, 340px); margin: clamp(28px, 5vw, 44px) auto 0; border-radius: 4px; }
+  .ks-page .narrow { max-width: none; padding: 0; }
+  .ks-page .dedication { padding: clamp(36px, 6vw, 64px) 0 0; }
+  .ks-page .about-card { box-shadow: none; }
+  .ks-part-title {
+    margin: clamp(44px, 7vw, 72px) 0 0; font-size: clamp(30px, 4.4vw, 42px); font-weight: 300;
+    letter-spacing: -.02em; color: var(--ink-strong);
+  }
+  .ks-memory { margin-top: clamp(28px, 4vw, 40px); }
+  .ks-memory h3 { margin: 0; font-size: clamp(22px, 2.6vw, 27px); font-weight: 400; font-style: italic; color: #33271F; }
+  .ks-memory img { display: block; max-width: 100%; max-height: 360px; margin: 14px 0 0; border-radius: 3px; }
+  .ks-memory p { margin: 12px 0 0; font-size: clamp(17px, 1.9vw, 19px); line-height: 1.65; font-weight: 300; color: var(--ink-soft); white-space: pre-line; }
+  .ks-end { margin: clamp(48px, 8vw, 80px) 0 0; text-align: center; font-size: 22px; font-style: italic; font-weight: 300; color: var(--ink-soft); }
+  .ks-end .eyebrow { display: block; margin-bottom: 10px; font-style: normal; }
+
+  @page { margin: 16mm 16mm 18mm; }
+  @media print {
+    body, .ks-page { background: none; }
+    .ks-bar { display: none; }
+    .ks-page { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+    .ks-cover { min-height: 230mm; display: flex; flex-direction: column; justify-content: center; }
+    .ks-cover img { max-height: 120mm; width: auto; max-width: 100%; }
+    .ks-break { break-before: page; }
+    .ks-page .dedication { padding-top: 0; }
+    .ks-memory, .about-card, .memorial-photo, .ks-end { break-inside: avoid; }
+    .ks-memory h3, .ks-part-title, .dedication h3 { break-after: avoid; }
+    .memorial-photo { opacity: 1; transition: none; }
+    .memorial-photo img { cursor: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="ks-bar">
+  <a href="/">&larr; Back to the site</a>
+  <button type="button" id="ks-print">Print</button>
+  <span class="ks-note" id="ks-note" aria-live="polite"></span>
+</div>
+<main class="ks-page">
+  <header class="ks-cover">
+    <div class="eyebrow">In loving memory</div>
+    <h1>Scout</h1>
+    <p class="ks-dates">September 20, 2014 &ndash; August 31, 2026</p>
+    <img id="ks-photo" alt="Scout" hidden />
+  </header>
+  <section class="narrow dedication ks-break" id="ks-memorial"></section>
+  <section class="narrow dedication life ks-break" id="ks-life"></section>
+  <div class="ks-break" id="ks-memories" hidden><h2 class="ks-part-title">Memories</h2></div>
+  <p class="ks-end"><span class="eyebrow">Forever loved</span>You&rsquo;ll always be my good buddy.</p>
+</main>
+<script src="memorial.js"></script>
+<script>
+(function keepsake() {
+  var DIR = "media/";
+  var PICTURE = /\.(jpe?g|png|webp|avif|gif)$/i;
+  function get(name) {
+    return fetch(DIR + name, { cache: "no-cache" })
+      .then(function (r) { return r.ok ? r.text() : ""; })
+      .catch(function () { return ""; });
+  }
+  var ready = Promise.all([
+    get("page_files.txt").then(function (t) {
+      var m = /^intro=(.+)$/m.exec(t), img = document.getElementById("ks-photo");
+      if (!m) return;
+      img.src = DIR + encodeURIComponent(m[1].trim());
+      img.hidden = false;
+    }),
+    Promise.all([get("memorial.txt"), get("life.txt"), get("about.txt")]).then(function (t) {
+      renderMemorial(t[0], document.getElementById("ks-memorial"), { dir: DIR });
+      var life = document.getElementById("ks-life");
+      renderMemorial(t[1], life, { dir: DIR });
+      var about = renderAbout(t[2]);
+      if (about) {
+        var first = life.firstElementChild;
+        life.insertBefore(about, first && first.tagName === "H3" ? first.nextSibling : first);
+      }
+    }),
+    get("memories.json").then(function (t) {
+      var list = [];
+      try { list = JSON.parse(t); } catch (e) {}
+      var box = document.getElementById("ks-memories");
+      (Array.isArray(list) ? list : []).forEach(function (m) {
+        if (!m || !(m.title || m.text)) return;
+        var photos = (Array.isArray(m.photos) ? m.photos : m.photo ? [m.photo] : []).filter(function (f) { return typeof f === "string" && PICTURE.test(f); });
+        var el = document.createElement("article");
+        el.className = "ks-memory";
+        if (m.title) {
+          var h = document.createElement("h3");
+          h.textContent = m.title;
+          el.appendChild(h);
+        }
+        if (photos.length) {
+          var img = document.createElement("img");
+          img.alt = m.title || "";
+          img.src = DIR + encodeURIComponent(photos[0]);
+          img.onerror = function () { img.remove(); };
+          el.appendChild(img);
+        }
+        String(m.text || "").split(/\n\s*\n/).forEach(function (para) {
+          if (!para.trim()) return;
+          var p = document.createElement("p");
+          memorialInline(para.trim(), p);
+          el.appendChild(p);
+        });
+        box.appendChild(el);
+        box.hidden = false;
+      });
+    })
+  ]);
+  // Print once every picture has loaded (or given up), so none is blank on paper.
+  function pictures() {
+    return Promise.all(Array.prototype.map.call(document.images, function (img) {
+      if (img.hidden || img.complete) return null;
+      return new Promise(function (r) { img.addEventListener("load", r); img.addEventListener("error", r); });
+    }));
+  }
+  var note = document.getElementById("ks-note");
+  document.getElementById("ks-print").addEventListener("click", function () {
+    note.textContent = "Getting the photos ready…";
+    ready.then(pictures).then(function () { note.textContent = ""; window.print(); });
+  });
+})();
+</script>
+</body>
+</html>

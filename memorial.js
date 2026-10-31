@@ -139,3 +139,35 @@ function renderMemorial(text, container, opts) {
     container.appendChild(el);
   });
 }
+
+// The "About me" card (media/about.txt): an optional "# Title" line (else
+// "About me"), then one "Label: value" line each; a line without a colon
+// is a value on its own. Values take **bold** / *italic*. Returns the card
+// (an <aside> with a <dl>), or null when there's nothing in it.
+function renderAbout(text, doc) {
+  doc = doc || document;
+  var title = "About me", rows = [];
+  String(text || "").replace(/\r\n?/g, "\n").split("\n").forEach(function (line) {
+    line = line.trim();
+    if (!line) return;
+    if (/^#\s/.test(line)) return void (title = line.replace(/^#\s+/, ""));
+    var m = /^([^:]{1,40}):\s*(.*)$/.exec(line);
+    rows.push(m ? [m[1].trim(), m[2]] : ["", line]);
+  });
+  if (!rows.length) return null;
+  var card = doc.createElement("aside");
+  card.className = "about-card";
+  var h = doc.createElement("h4");
+  h.textContent = title;
+  card.appendChild(h);
+  var dl = doc.createElement("dl");
+  rows.forEach(function (r) {
+    var dt = doc.createElement("dt"), dd = doc.createElement("dd");
+    dt.textContent = r[0];
+    memorialInline(r[1], dd);
+    dl.appendChild(dt);
+    dl.appendChild(dd);
+  });
+  card.appendChild(dl);
+  return card;
+}
