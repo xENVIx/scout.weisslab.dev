@@ -74,6 +74,11 @@ section, header, footer, .hero-bg, .band { background-color: var(--paper); }
   transition: color 200ms ease;
 }
 .topnav a:hover, .sidenav a:hover { color: var(--accent); }
+/* The section on screen (script.js, markNav()). */
+.topnav a[aria-current], .sidenav a[aria-current] {
+  color: var(--accent);
+  text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 6px;
+}
 
 .sidenav {
   position: fixed; top: 0; left: 0; height: 100vh; z-index: 500;
@@ -633,6 +638,26 @@ footer .mid { padding: clamp(40px,6vw,72px) clamp(20px,5vw,48px); text-align: ce
 footer .name { font-size: clamp(26px,3.6vw,38px); font-weight: 300; font-style: italic; color: #33271F; }
 footer .eyebrow { margin-top: 14px; }
 
+/* On a narrow computer window, the docked .sidenav (--nav-w wide, from
+   script.js) would cover the left of the content: each container's left
+   padding grows to keep it clear (by the width it's short of, given the
+   container's centring), and the right padding to keep clear of the dots.
+   Wide windows, where the centring leaves room anyway, are unchanged. */
+@media (min-width: 641px) {
+  .scenes .scene:not(#top) .wrap {
+    padding-left: max(clamp(20px, 5vw, 56px), calc(var(--nav-w, 0px) + 24px - max(0px, (100vw - 1120px) / 2)));
+    padding-right: max(clamp(20px, 5vw, 56px), calc(52px - max(0px, (100vw - 1120px) / 2)));
+  }
+  .scenes .scene:not(#top) .narrow {
+    padding-left: max(clamp(20px, 5vw, 40px), calc(var(--nav-w, 0px) + 24px - max(0px, (100vw - 720px) / 2)));
+    padding-right: max(clamp(20px, 5vw, 40px), calc(52px - max(0px, (100vw - 720px) / 2)));
+  }
+  .scenes .scene:not(#top) .mid {
+    padding-left: max(clamp(20px, 5vw, 48px), calc(var(--nav-w, 0px) + 24px - max(0px, (100vw - 1000px) / 2)));
+    padding-right: max(clamp(20px, 5vw, 48px), calc(52px - max(0px, (100vw - 1000px) / 2)));
+  }
+}
+
 @media (max-width: 640px) {
   /* Wider side padding keeps text clear of the docked .sidenav. */
   .wrap, .narrow, .mid { padding-left: 50px; padding-right: 50px; }
@@ -663,7 +688,10 @@ footer .eyebrow { margin-top: 14px; }
 }
 .runner-go { position: absolute; left: 0; bottom: 0; will-change: transform; }
 .runner.is-ready .runner-go { transition: transform 1200ms cubic-bezier(.45,.05,.35,1); }
-.runner-dog { display: block; width: 58px; height: auto; overflow: visible; transition: transform 250ms ease; }
+.runner-dog { display: block; width: 58px; height: auto; overflow: visible; transition: transform 250ms ease, opacity 250ms; }
+/* He can be tapped (the rest of .runner lets taps through). */
+.runner-dog { pointer-events: auto; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.runner.is-away .runner-dog { opacity: 0; }
 .runner.is-left .runner-dog { transform: scaleX(-1); }
 .runner .leg, .runner .tail { transform-box: fill-box; }
 .runner .leg { transform-origin: 50% 0; }
@@ -696,7 +724,9 @@ footer .eyebrow { margin-top: 14px; }
 .runner-frisbee {
   position: absolute; left: calc(100% + 10px); bottom: 24px;
   width: 20px; height: 6px; border-radius: 50%;
-  background: #E8692F; box-shadow: inset 0 -1.5px 0 rgba(0,0,0,.18), 0 6px 6px -4px rgba(64,42,25,.25);
+  /* his favourite frisbee: neon yellow */
+  background: radial-gradient(ellipse closest-side, #E4FF3C 0 55%, #C4E01E 58% 64%, #DDFB2A 67%);
+  box-shadow: inset 0 -1.5px 0 rgba(90,100,0,.3), 0 0 0 .5px rgba(64,42,25,.18), 0 6px 6px -4px rgba(64,42,25,.25);
   animation: runner-float 1400ms ease-in-out infinite alternate;
   transition: opacity 300ms;
 }
@@ -713,5 +743,55 @@ footer .eyebrow { margin-top: 14px; }
 @media (prefers-reduced-motion: reduce) {
   .runner.is-ready .runner-go { transition: none; }
   .runner *, .runner .tail { animation: none !important; }
+}
+
+/* ---- Tapping Scout: he comes up to the screen and licks it (scoutRun(),
+   script.js). .lick covers the screen without catching taps; the face
+   grows from where he was, looks out, licks (.is-licking), and backs away.
+   Each lick leaves a .smear and .drop s running down the glass. ---- */
+.lick { position: fixed; inset: 0; z-index: 800; pointer-events: none; overflow: hidden; }
+.lick-face {
+  position: absolute; left: 50%; bottom: 10vh;
+  width: min(66vmin, 480px); margin-left: calc(min(66vmin, 480px) / -2);
+  filter: drop-shadow(0 20px 40px rgba(64,42,25,.25));
+}
+.lick-face svg { display: block; width: 100%; height: auto; overflow: visible; }
+.lick-face .lick-head, .lick-face .lick-tongue, .lick-face .lick-eyes { transform-box: fill-box; }
+.lick-face .lick-head { transform-origin: 50% 80%; }
+.lick-face .lick-tongue { transform-origin: 50% 0; transform: scaleY(.6); } /* panting, as he so often was */
+.lick-face .lick-eyes { transform-origin: 50% 50%; }
+.lick-face.is-coming svg { animation: lick-bound 200ms ease-in-out infinite alternate; }
+.lick-face.is-looking .lick-head { animation: lick-tilt 1400ms ease-in-out infinite alternate; }
+.lick-face.is-looking .lick-eyes { animation: lick-blink 2600ms 300ms; }
+.lick-face.is-licking svg { animation: lick-push 700ms ease-in-out; }
+.lick-face.is-licking .lick-tongue { animation: lick-tongue 700ms ease-in-out; }
+@keyframes lick-bound { from { transform: translateY(0); } to { transform: translateY(-3%); } }
+@keyframes lick-tilt { from { transform: rotate(-7deg); } to { transform: rotate(5deg); } }
+@keyframes lick-blink { 0%, 90%, 100% { transform: scaleY(1); } 94% { transform: scaleY(.1); } }
+@keyframes lick-push { 0%, 100% { transform: scale(1); } 45% { transform: scale(1.08) translateY(-2%); } }
+@keyframes lick-tongue {
+  0% { transform: scaleY(.6); }
+  30% { transform: scaleY(1.25); }
+  50% { transform: scaleY(1.35) scaleX(1.35); } /* flat against the glass */
+  75% { transform: scaleY(.9) scaleX(1.1); }
+  100% { transform: scaleY(.6); }
+}
+.smear {
+  position: absolute; transform: translate(-50%, -50%); border-radius: 50%;
+  background: radial-gradient(ellipse at 45% 40%, rgba(255,255,255,.55), rgba(235,242,246,.28) 45%, rgba(220,232,240,0) 70%);
+  box-shadow: inset 0 0 18px rgba(255,255,255,.35);
+  -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px);
+  -webkit-mask-image: radial-gradient(ellipse closest-side, #000 55%, transparent 100%);
+  mask-image: radial-gradient(ellipse closest-side, #000 55%, transparent 100%);
+}
+/* A drop: clear, with a highlight and a wet streak behind it. */
+.drop {
+  position: absolute; border-radius: 50% 50% 50% 50% / 62% 62% 40% 40%;
+  background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.95) 0 12%, rgba(214,232,244,.5) 30%, rgba(150,185,210,.35) 70%, rgba(120,160,190,.55) 100%);
+  box-shadow: 0 1px 2px rgba(64,42,25,.25), inset 0 -1px 1px rgba(255,255,255,.6);
+}
+.drop::before {
+  content: ""; position: absolute; left: 32%; width: 36%; bottom: 70%; height: 46px;
+  border-radius: 999px; background: linear-gradient(to bottom, rgba(225,238,246,0), rgba(225,238,246,.45));
 }
 
