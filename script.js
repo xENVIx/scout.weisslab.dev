@@ -43,9 +43,9 @@ function gifLength(src) {
    so a clip that's needed next never shares the connection. */
 var clipQueue = Promise.resolve();
 
-/* Scenes: the page is full-screen .scene layers (intro, dedication, life,
-   memories, moments, gallery, messages, farewell) and scrolling fades between them
-   instead of moving the page. A scene taller than the screen scrolls normally inside itself
+/* Scenes: the page is full-screen .scene layers (intro, dedication,
+   slideshow, moments, gallery, messages) and scrolling fades between them instead of moving
+   the page. A scene taller than the screen scrolls normally inside itself
    and only fades once you're at its top or bottom edge. Wheel, touch swipe,
    keyboard and the nav links all go through go(). .sidenav slides in on
    every scene after the intro (the intro has .topnav instead).
@@ -96,14 +96,14 @@ var clipQueue = Promise.resolve();
 
   document.documentElement.classList.add("scenes");
 
-  // Named after the matching nav link ("Top" for the intro), or its data-name.
+  // Named after the matching nav link ("Top" for the intro).
   var dotNav = document.createElement("nav");
   dotNav.className = "scene-dots";
   dotNav.setAttribute("aria-label", "Sections");
   var dots = list.map(function (el, i) {
     var anchor = el.getAttribute("data-anchor");
     var link = anchor && document.querySelector('.sidenav a[href="#' + anchor + '"]');
-    var name = i === 0 ? "Top" : link ? link.textContent.trim() : el.getAttribute("data-name") || anchor;
+    var name = i === 0 ? "Top" : link ? link.textContent.trim() : anchor;
     var b = document.createElement("button");
     b.type = "button";
     b.setAttribute("aria-label", name);
@@ -1120,27 +1120,20 @@ function soundButton(v) {
     .catch(showHero);
 })();
 
-/* The Memorial section's text lives in media/memorial.txt, and Scout's
-   Life's (#life, after it) in media/life.txt (both edited at
+/* The Memorial section's text lives in media/memorial.txt (edited at
    /media-admin), paragraphs separated by blank lines, with **bold**,
    *italic*, "# " headings and (caption[photo.jpg]) photos; memorial.js
-   turns it into DOM nodes (never HTML). Both sections are empty in
-   index.html. Their photos load once the section is near, open in the
-   lightbox when clicked, and are left out if the file is gone. Scout's
-   Life starts with his "About me" card (media/about.txt, renderAbout()),
-   after its heading. */
+   turns it into DOM nodes (never HTML). #dedication is empty in
+   index.html. Its photos load once the Memorial is near, open in the
+   lightbox when clicked, and are left out if the file is gone. */
 (function memorialText() {
-  if (typeof renderMemorial !== "function") return;
-  function get(name) {
-    return fetch("media/" + name, { cache: "no-cache" })
-      .then(function (r) { return r.ok ? r.text() : ""; })
-      .catch(function () { return ""; });
-  }
-  [["dedication", "memorial.txt"], ["life", "life.txt"]].forEach(function (part) {
-    var section = document.getElementById(part[0]);
-    if (!section) return;
-    Promise.all([get(part[1]), part[0] === "life" ? get("about.txt") : ""]).then(function (t) {
-      if (memorialBlocks(t[0]).length) renderMemorial(t[0], section, {
+  var section = document.getElementById("dedication");
+  if (!section || typeof renderMemorial !== "function") return;
+  fetch("media/memorial.txt", { cache: "no-cache" })
+    .then(function (r) { return r.ok ? r.text() : ""; })
+    .then(function (t) {
+      if (!memorialBlocks(t).length) return;
+      renderMemorial(t, section, {
         dir: "media/",
         setSrc: function (img, url) { whenNear(img, function () { img.src = url; }); },
         onPhoto: function (fig, url, caption) {
@@ -1149,22 +1142,8 @@ function soundButton(v) {
           });
         }
       });
-      var about = t[1] && renderAbout(t[1]);
-      if (!about) return;
-      var first = section.firstElementChild;
-      section.insertBefore(about, first && first.tagName === "H3" ? first.nextSibling : first);
-    });
-  });
-})();
-
-/* On his birthday (BIRTHDAY), the first page says so instead of "In
-   loving memory". */
-(function birthday() {
-  var BIRTHDAY = [2014, 9, 20]; // year, month, day
-  var el = document.getElementById("hero-eyebrow"), now = new Date();
-  if (!el || now.getMonth() + 1 !== BIRTHDAY[1] || now.getDate() !== BIRTHDAY[2]) return;
-  var n = now.getFullYear() - BIRTHDAY[0], s = n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th";
-  el.textContent = "Today would have been his " + n + s + " birthday";
+    })
+    .catch(function () {});
 })();
 
 /* Memories: little stories from media/memories.json ([{ title, text,

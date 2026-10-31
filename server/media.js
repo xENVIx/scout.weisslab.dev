@@ -23,8 +23,7 @@
    transition without its own: transitions.txt, "<from>><to>=<file>" and
    "random=<file>" lines (script.js reads it).
    memorial.txt is the Memorial
-   section's text and life.txt Scout's Life's, edited in a box at the
-   bottom of the page (a tab for each) (paragraphs
+   section's text, edited in a box at the bottom of the page (paragraphs
    separated by blank lines). memories.json is the Memories section, a list
    of {title, text, photos} (photos: files, the first the main one), edited in its own box. captions.txt holds each file's optional
    caption ("<file>=<caption>"), and order.txt the display order the owner
@@ -73,11 +72,6 @@ var KINDS = [["image", "Images"], ["gif", "GIFs"], ["video", "Videos"], ["other"
 // leaves a gap on the page.
 var PAGE_LIST = "page_files.txt";
 var MEMORIAL_FILE = "memorial.txt";
-var LIFE_FILE = "life.txt"; // Scout's Life, the section after the Memorial, written the same way
-var ABOUT_FILE = "about.txt"; // the "About me" card at the start of Scout's Life: "Label: value" lines
-var MAX_ABOUT = 3000; // characters
-// The texts the memorial box edits, by the name its tabs send.
-var TEXTS = { memorial: [MEMORIAL_FILE, "Memorial"], life: [LIFE_FILE, "Scout’s Life"] };
 // A photo's tag in the memorial text, "(caption[file 35% print])",
 // anywhere in it: the same as MEMORIAL_TAG in /memorial.js, which draws
 // the page and the preview here.
@@ -94,12 +88,10 @@ var TRANSITIONS_FILE = "transitions.txt";
 // "top"); a transition plays between one and the next, either way.
 var TRANSITIONS = [
   ["top>dedication", "First page ↔ Memorial"],
-  ["dedication>life", "Memorial ↔ Scout’s Life"],
-  ["life>memories", "Scout’s Life ↔ Memories"],
+  ["dedication>memories", "Memorial ↔ Memories"],
   ["memories>moments", "Memories ↔ Moments"],
   ["moments>gallery", "Moments ↔ Gallery"],
-  ["gallery>messages", "Gallery ↔ Messages"],
-  ["messages>farewell", "Messages ↔ Goodbye"]
+  ["gallery>messages", "Gallery ↔ Messages"]
 ];
 var CAPTIONS_FILE = "captions.txt";
 var ORDER_LIST = "order.txt";
@@ -108,7 +100,7 @@ var SETTINGS_FILE = "settings.txt";
 var DEFAULT_SLIDE_SECONDS = 5; // script.js uses the same default
 var MAX_SLIDE_SECONDS = 120;
 // Kept in media/ for the page to read, but not media themselves.
-var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, OLD_MOMENTS_LIST, MEMORIES_FILE, TRANSITIONS_FILE, PAGE_LIST, MEMORIAL_FILE, LIFE_FILE, ABOUT_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
+var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, OLD_MOMENTS_LIST, MEMORIES_FILE, TRANSITIONS_FILE, PAGE_LIST, MEMORIAL_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
 
 // ---- names and paths ----
 
@@ -230,11 +222,10 @@ function writeMemories(list) {
   writeFile(MEMORIES_FILE, JSON.stringify(list, null, 2) + "\n");
 }
 
-// Once, on start, after Moments and the slideshow became one section,
-// Memories came in after the Memorial and Scout's Life between them: the
-// old Moments list joins the slideshow list (now Moments), and the
-// transitions move to the new section boundaries (the one into Memories
-// still plays arriving at Memories).
+// Once, on start, after Moments and the slideshow became one section and
+// Memories came in after the Memorial: the old Moments list joins the
+// slideshow list (now Moments), and the transitions move to the new
+// section boundaries.
 function migrate() {
   try {
     if (fs.existsSync(filePath(OLD_MOMENTS_LIST))) {
@@ -243,7 +234,7 @@ function migrate() {
       console.log("migrate: merged " + OLD_MOMENTS_LIST + " into " + SLIDES_LIST);
     }
     var t = readTransitions(), moved = false;
-    [["dedication>slideshow", "memories>moments"], ["slideshow>moments", "moments>gallery"], ["dedication>memories", "life>memories"]].forEach(function (m) {
+    [["dedication>slideshow", "memories>moments"], ["slideshow>moments", "moments>gallery"]].forEach(function (m) {
       if (!t[m[0]]) return;
       if (!t[m[1]]) t[m[1]] = t[m[0]];
       delete t[m[0]];
@@ -290,7 +281,7 @@ function renamePageFile(file, to) {
 }
 
 // After a delete (or rename), drop the old name from the lists, captions,
-// order, transitions, memories and the Memorial and Scout's Life texts (or carry it all over to
+// order, transitions, memories and memorial text (or carry it all over to
 // the new name).
 function forgetFile(file, renamedTo) {
   [GALLERY_OUT_LIST, SLIDES_LIST].forEach(function (name) {
@@ -330,19 +321,17 @@ function forgetFile(file, renamedTo) {
     changed = true;
   });
   if (changed) writeMemories(memories);
-  [MEMORIAL_FILE, LIFE_FILE].forEach(function (textFile) {
-    var memorial = "";
-    try { memorial = fs.readFileSync(filePath(textFile), "utf8"); } catch (e) { if (e.code !== "ENOENT") throw e; }
-    var tagged = false;
-    var next = memorial.replace(MEMORIAL_TAG, function (all, cap, name, size, frame) {
-      if (name !== file) return all;
-      tagged = true;
-      return renamedTo ? "(" + cap + "[" + renamedTo + (size ? " " + size + "%" : "") + (frame ? " " + frame : "") + "])" : "";
-    });
-    // A deleted photo's tag goes, and the space or blank lines it leaves.
-    if (tagged && !renamedTo) next = next.replace(/[ \t]{2,}/g, " ").replace(/ +\n/g, "\n").replace(/\n\s*\n(\s*\n)+/g, "\n\n").trim() + "\n";
-    if (tagged) writeFile(textFile, next);
+  var memorial = "";
+  try { memorial = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8"); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  var tagged = false;
+  var next = memorial.replace(MEMORIAL_TAG, function (all, cap, name, size, frame) {
+    if (name !== file) return all;
+    tagged = true;
+    return renamedTo ? "(" + cap + "[" + renamedTo + (size ? " " + size + "%" : "") + (frame ? " " + frame : "") + "])" : "";
   });
+  // A deleted photo's tag goes, and the space or blank lines it leaves.
+  if (tagged && !renamedTo) next = next.replace(/[ \t]{2,}/g, " ").replace(/ +\n/g, "\n").replace(/\n\s*\n(\s*\n)+/g, "\n\n").trim() + "\n";
+  if (tagged) writeFile(MEMORIAL_FILE, next);
 }
 
 // ---- helpers ----
@@ -599,32 +588,18 @@ function action(req, res) {
     var msg = "";
     var exists = validFile(f.file) && fs.existsSync(filePath(f.file));
     if (f.action === "memorial") {
-      // The Memorial's text or Scout's Life's ("which"). Tidy line endings
-      // and stray spaces; blank lines separate paragraphs.
-      var which = TEXTS[f.which] ? f.which : "memorial", what = TEXTS[which][1];
+      // Tidy line endings and stray spaces; blank lines separate paragraphs.
       var text = String(f.text || "").replace(/\r\n?/g, "\n").split(/\n\s*\n/)
         .map(function (p) { return p.replace(/[ \t]+\n/g, "\n").trim(); }).filter(Boolean).join("\n\n");
-      if (!text && which === "memorial") msg = "The memorial text can't be empty.";
+      if (!text) msg = "The memorial text can't be empty.";
       else if (text.length > MAX_MEMORIAL) msg = "That's too long (" + MAX_MEMORIAL + " characters max).";
       else {
         try {
-          writeFile(TEXTS[which][0], text ? text + "\n" : "");
-          msg = "Saved the " + what + " text.";
-        } catch (e) { console.error(e); msg = "Couldn't save the " + what + " text: " + e.code; }
+          writeFile(MEMORIAL_FILE, text + "\n");
+          msg = "Saved the memorial text.";
+        } catch (e) { console.error(e); msg = "Couldn't save the memorial text: " + e.code; }
       }
-      return send(res, 303, "", { Location: "/media-admin?msg=" + encodeURIComponent(msg) + "&text=" + which + "#memorial" });
-    }
-    if (f.action === "about") {
-      var about = String(f.text || "").replace(/\r\n?/g, "\n").split("\n")
-        .map(function (l) { return l.trim(); }).filter(Boolean).join("\n");
-      if (about.length > MAX_ABOUT) msg = "That's too long (" + MAX_ABOUT + " characters max).";
-      else {
-        try {
-          writeFile(ABOUT_FILE, about ? about + "\n" : "");
-          msg = "Saved About me.";
-        } catch (e) { console.error(e); msg = "Couldn't save About me: " + e.code; }
-      }
-      return send(res, 303, "", { Location: "/media-admin?msg=" + encodeURIComponent(msg) + "#about" });
+      return send(res, 303, "", { Location: "/media-admin?msg=" + encodeURIComponent(msg) + "#memorial" });
     }
     // The memories editor saves them all at once and gets JSON back.
     if (f.action === "memories") {
@@ -775,8 +750,6 @@ function hubPage(res, msg) {
       '<div class="sub">' +
       card("/media-admin#title-photo", "Title page photo", "The big photo on the first page.") +
       card("/media-admin#memorial", "Memorial text", "The words in the Memorial section.") +
-      card("/media-admin?text=life#memorial", "Scout’s Life text", "The words in the Scout’s Life section, after the Memorial.") +
-      card("/media-admin#about", "About me", "The little card of facts about Scout at the start of Scout’s Life.") +
       card("/media-admin#memories", "Memories", "The little stories in the Memories section, with their photos, GIFs and videos.") +
       card("/media-admin#slideshow", "Moments timing", "How long each photo shows in Moments.") +
       '</div>' +
@@ -807,16 +780,8 @@ function adminPage(req, res, query) {
   var intro = pageFiles().intro || "";
   var photos = files.map(function (f) { return f.name; }).filter(function (n) { return PHOTO_EXT.test(n); });
   var captions = readCaptions();
-  // The memorial box edits the Memorial text or Scout's Life's, one at a
-  // time (its tabs); it opens on the one just saved.
-  var texts = {};
-  Object.keys(TEXTS).forEach(function (k) {
-    texts[k] = "";
-    try { texts[k] = fs.readFileSync(filePath(TEXTS[k][0]), "utf8").trim(); } catch (e) { if (e.code !== "ENOENT") throw e; }
-  });
-  var textNow = TEXTS[query.get("text")] ? query.get("text") : "memorial";
-  var about = "";
-  try { about = fs.readFileSync(filePath(ABOUT_FILE), "utf8").trim(); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  var memorial = "";
+  try { memorial = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8").trim(); } catch (e) { if (e.code !== "ENOENT") throw e; }
 
   function row(f) {
     var url = "/media/" + encodeURIComponent(f.name);
@@ -903,7 +868,7 @@ function adminPage(req, res, query) {
     '.photo-grid button{padding:4px;border-radius:6px;display:flex;flex-direction:column;gap:4px;align-items:stretch;font-weight:400;font-size:11px}' +
     '.photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:3px;display:block}.photo-grid button{position:relative}.photo-grid .gif-badge{position:absolute;top:8px;left:8px;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:600;letter-spacing:.04em}.photo-grid span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
     '.preview-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:28px 0 8px}.preview-head h3{font:600 13px system-ui,sans-serif;text-transform:uppercase;letter-spacing:.08em;color:#6B5748;margin:0}' +
-    '.seg{display:inline-flex;gap:4px}.text-tabs{display:flex;margin:0 0 10px}.seg button{padding:6px 12px}.seg button[aria-pressed=true],.frames button[aria-pressed=true]{background:#A8571F;border-color:#A8571F;color:#FFF8EC}' +
+    '.seg{display:inline-flex;gap:4px}.seg button{padding:6px 12px}.seg button[aria-pressed=true],.frames button[aria-pressed=true]{background:#A8571F;border-color:#A8571F;color:#FFF8EC}' +
     '.pv-box{position:relative;overflow:hidden;border:1px solid #DBC8AE;border-radius:6px;background:#E9DECD}.pv-box iframe{position:absolute;top:0;border:0;transform-origin:0 0;background:#FAF4EA;box-shadow:0 0 0 1px #DBC8AE}' +
     '.frames{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px}.frames button{padding:5px 10px;font-size:12px}.frames .lab{margin-right:4px}' +
     '.mem{border:1px solid #DBC8AE;border-radius:6px;background:#FFFDF8;padding:12px;margin-bottom:12px;font:14px system-ui,sans-serif}' +
@@ -936,7 +901,7 @@ function adminPage(req, res, query) {
     '.settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:15px system-ui,sans-serif}.settings input{width:80px;margin-left:8px}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
     '</style></head><body><main><form method="post" action="/admin/logout" class="out"><button>Sign out</button></form><p class="jump"><a href="/admin">← Admin</a></p><h1>Scout’s media</h1>' +
-    '<p class="jump"><a href="#title-photo">Title page photo ↓</a> · <a href="#slideshow">Moments timing ↓</a> · <a href="#memorial">Memorial &amp; Scout’s Life text ↓</a> · <a href="#about">About me ↓</a> · <a href="#memories">Memories ↓</a></p>' +
+    '<p class="jump"><a href="#title-photo">Title page photo ↓</a> · <a href="#slideshow">Moments timing ↓</a> · <a href="#memorial">Memorial text ↓</a> · <a href="#memories">Memories ↓</a></p>' +
     (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') +
     '<h2>Upload</h2>' +
     '<label class="drop" id="drop">Drop photos or videos here, or click to choose' +
@@ -956,11 +921,8 @@ function adminPage(req, res, query) {
     '<label>Seconds each photo shows <input type="number" name="slide_seconds" min="1" max="' + MAX_SLIDE_SECONDS + '" step="0.5" value="' + esc(slideSeconds()) + '" required></label> ' +
     '<button class="primary">Save</button></form>' +
 
-    '<h2 id="memorial">Memorial &amp; Scout’s Life text</h2>' +
-    '<p class="seg text-tabs" role="group" aria-label="Which text">' + Object.keys(TEXTS).map(function (k) {
-      return '<button type="button" data-text="' + k + '" aria-pressed="' + (k === textNow) + '">' + TEXTS[k][1] + '</button>';
-    }).join("") + '</p>' +
-    '<p class="hint">The text in the Memorial section, and in Scout’s Life after it (the tabs above switch between them; save each one on its own). Keep the Memorial short and sweet; Scout’s Life is for his story. Leave a blank line between paragraphs; the first paragraph gets the large first letter. ' +
+    '<h2 id="memorial">Memorial text</h2>' +
+    '<p class="hint">This is the text in the Memorial section. Leave a blank line between paragraphs; the first paragraph gets the large first letter. ' +
     'Select some words and press <b>B</b> or <i>I</i> to make them bold or italic (they get **stars** around them). <b>Heading</b> makes the paragraph your cursor is in a heading (it starts with "# "). ' +
     '<b>Add photo or GIF</b> puts a photo or GIF right where your cursor is, even in the middle of a paragraph (the text after it wraps around it), or on its own if your cursor is on the empty line between two paragraphs. It shows up as a tag like <code>(Scout as a puppy[01_scout_baby.jpg])</code>: the words in brackets are its caption (optional). ' +
     'To change a photo’s size or frame, tap it in the preview or put your cursor in its tag: a bar with its <b>Size</b> slider and <b>Frame</b> buttons shows up and stays at the top of the screen. Its line then reads like <code>01_scout_baby.jpg 35% print</code> (35% of the text’s width; from 70% up it sits centered on its own). ' +
@@ -968,7 +930,7 @@ function adminPage(req, res, query) {
     '<div class="photo-edit" id="photo-edit" hidden><img alt=""><div class="pe-body"><div class="pe-name" id="pe-name"></div>' +
     '<label class="size">Size <input type="range" id="pe-size" min="15" max="100" step="1" value="46"> <output id="pe-out"></output></label>' +
     frameButtonsHtml("pe-frames") + '</div><button type="button" class="done" id="pe-done">Done</button></div>' +
-    '<form method="post" class="memorial" id="memorial-form"><input type="hidden" name="action" value="memorial"><input type="hidden" name="which" id="memorial-which" value="' + textNow + '">' +
+    '<form method="post" class="memorial" id="memorial-form"><input type="hidden" name="action" value="memorial">' +
     '<div class="tools" role="toolbar" aria-label="Formatting">' +
     '<button type="button" data-wrap="**" title="Bold"><b>B</b></button>' +
     '<button type="button" data-wrap="*" title="Italic"><i>I</i></button>' +
@@ -980,18 +942,12 @@ function adminPage(req, res, query) {
     frameButtonsHtml("photo-frames") +
     '<p class="hint">Tap a photo or GIF (marked GIF) to add it where your cursor is.</p><div class="photo-grid">' +
     photoButtons(files) + '</div></div>' +
-    '<textarea name="text" id="memorial-text" aria-label="' + TEXTS[textNow][1] + ' text" maxlength="' + MAX_MEMORIAL + '">' + esc(texts[textNow]) + '</textarea>' +
-    '<script type="application/json" id="memorial-texts">' + JSON.stringify(texts).replace(/</g, "\\u003c") + '</script>' +
-    '<button class="primary" id="memorial-save">Save ' + TEXTS[textNow][1] + ' text</button> <span class="saved" id="memorial-dirty" aria-live="polite"></span></form>' +
+    '<textarea name="text" id="memorial-text" aria-label="Memorial text" maxlength="' + MAX_MEMORIAL + '">' + esc(memorial) + '</textarea>' +
+    '<button class="primary">Save memorial text</button> <span class="saved" id="memorial-dirty" aria-live="polite"></span></form>' +
     '<div class="preview-head"><h3>Preview: how it looks on the site</h3><span class="seg" role="group" aria-label="Preview size">' +
     '<button type="button" data-view="computer">Computer</button><button type="button" data-view="phone">Phone</button></span></div>' +
-    '<div class="pv-box" id="pv-box"><iframe id="memorial-frame" src="/memorial-preview.html" title="Preview of the section"></iframe></div>' +
+    '<div class="pv-box" id="pv-box"><iframe id="memorial-frame" src="/memorial-preview.html" title="Preview of the Memorial section"></iframe></div>' +
     '<p class="hint">Tap a photo in the preview to pick it.</p>' +
-    '<h2 id="about">About me</h2>' +
-    '<p class="hint">The card of facts about Scout at the start of Scout’s Life (and in the printed keepsake). One line each, like <code>Birthday: September 20, 2014</code>: the part before the colon is the label. The first line, starting with "# ", is the card’s title. **stars** make words bold, *one star* italic. Leave it empty to have no card.</p>' +
-    '<form method="post" class="memorial about-form"><input type="hidden" name="action" value="about">' +
-    '<textarea name="text" aria-label="About me" maxlength="' + MAX_ABOUT + '" style="min-height:260px">' + esc(about) + '</textarea>' +
-    '<button class="primary">Save About me</button></form>' +
     '<h2 id="memories">Memories</h2>' +
     '<p class="hint">The little stories in the Memories section: each one is a card with its main picture and title, and opens to the whole story when tapped. A memory can have up to 30 pictures (photos, GIFs or videos): the one marked <b>Main</b> is on its card (a GIF or video shows there as a still), and with more than one they play as a slideshow above the story. Under each picture, ★ makes it the main one, ← → move it and ✕ takes it off. ' +
     'Blank lines separate paragraphs; **stars** make words bold, *one star* italic. ↑ ↓ change the order of the memories. Nothing changes on the site until you press <b>Save memories</b>.</p>' +
@@ -1375,27 +1331,6 @@ function adminClient() {
     ta.addEventListener("input", changed);
     document.getElementById("memorial-form").addEventListener("submit", function () { saved = ta.value; });
     window.addEventListener("beforeunload", function (e) { if (ta.value !== saved) { e.preventDefault(); e.returnValue = ""; } });
-    // The tabs: the Memorial text or Scout's Life's, in the same box, the
-    // preview and the photo tools; switching drops unsaved changes (asked first).
-    var texts = JSON.parse(document.getElementById("memorial-texts").textContent);
-    var which = document.getElementById("memorial-which");
-    Array.prototype.forEach.call(document.querySelectorAll("[data-text]"), function (b) {
-      b.addEventListener("click", function () {
-        var k = b.getAttribute("data-text");
-        if (k === which.value) return;
-        if (ta.value !== saved && !confirm("Switch without saving your changes to this text?")) return;
-        texts[which.value] = saved;
-        which.value = k;
-        ta.value = saved = texts[k] || "";
-        var label = b.textContent;
-        ta.setAttribute("aria-label", label + " text");
-        document.getElementById("memorial-save").textContent = "Save " + label + " text";
-        Array.prototype.forEach.call(document.querySelectorAll("[data-text]"), function (o) { o.setAttribute("aria-pressed", String(o === b)); });
-        bar.hidden = true;
-        editN = -1;
-        draw();
-      });
-    });
     var edit = function (value, from, to) {
       ta.value = value;
       ta.focus();
