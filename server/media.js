@@ -94,6 +94,10 @@ var OLD_MOMENTS_LIST = "moments.txt"; // GIFs and videos, before Moments and the
 var MEMORIES_FILE = "memories.json";
 var MAX_MEMORIES = 100, MAX_MEMORY_TITLE = 120, MAX_MEMORY_TEXT = 6000; // characters
 var MAX_MEMORY_PHOTOS = 30; // pictures per memory
+// The Map section: places Scout went, [{ date, lat, lng, text, photos }],
+// edited like the memories; the page puts them on a map and a timeline.
+var PLACES_FILE = "places.json";
+var MAX_PLACES = 300, MAX_PLACE_TEXT = 3000; // characters
 var TRANSITIONS_FILE = "transitions.txt";
 // The page's sections in order, by their data-anchor (the intro's id is
 // "top"); a transition plays between one and the next, either way.
@@ -102,7 +106,8 @@ var TRANSITIONS = [
   ["dedication>memories", "Memorial ↔ Memories"],
   ["memories>moments", "Memories ↔ Moments"],
   ["moments>gallery", "Moments ↔ Gallery"],
-  ["gallery>messages", "Gallery ↔ Messages"]
+  ["gallery>map", "Gallery ↔ Map"],
+  ["map>messages", "Map ↔ Messages"]
 ];
 var CAPTIONS_FILE = "captions.txt";
 var ORDER_LIST = "order.txt";
@@ -111,7 +116,7 @@ var SETTINGS_FILE = "settings.txt";
 var DEFAULT_SLIDE_SECONDS = 5; // script.js uses the same default
 var MAX_SLIDE_SECONDS = 120;
 // Kept in media/ for the page to read, but not media themselves.
-var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, OLD_MOMENTS_LIST, MEMORIES_FILE, TRANSITIONS_FILE, PAGE_LIST, MEMORIAL_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
+var DATA_FILES = [GALLERY_OUT_LIST, SLIDES_LIST, OLD_MOMENTS_LIST, MEMORIES_FILE, PLACES_FILE, TRANSITIONS_FILE, PAGE_LIST, MEMORIAL_FILE, CAPTIONS_FILE, ORDER_LIST, SETTINGS_FILE];
 
 // ---- names and paths ----
 
@@ -233,10 +238,38 @@ function writeMemories(list) {
   writeFile(MEMORIES_FILE, JSON.stringify(list, null, 2) + "\n");
 }
 
+// A place: date "YYYY-MM-DD" (or "" when unknown), lat/lng in degrees,
+// text, photos (files in media/). Kept in date order, undated ones last.
+function cleanPlace(p) {
+  p = p || {};
+  var lat = Number(p.lat), lng = Number(p.lng);
+  return {
+    date: /^\d{4}-\d{2}-\d{2}$/.test(p.date) ? p.date : "",
+    lat: isFinite(lat) && Math.abs(lat) <= 90 && p.lat !== "" && p.lat !== null ? Math.round(lat * 1e6) / 1e6 : null,
+    lng: isFinite(lng) && Math.abs(lng) <= 180 && p.lng !== "" && p.lng !== null ? Math.round(lng * 1e6) / 1e6 : null,
+    text: String(p.text || "").replace(/\r\n?/g, "\n").split(/\n\s*\n/)
+      .map(function (t) { return t.replace(/[ \t]+\n/g, "\n").trim(); }).filter(Boolean).join("\n\n"),
+    photos: (Array.isArray(p.photos) ? p.photos : []).filter(function (f, j, all) { return typeof f === "string" && f && all.indexOf(f) === j; })
+  };
+}
+function placeOrder(a, b) {
+  return (a.date ? 0 : 1) - (b.date ? 0 : 1) || (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+}
+function readPlaces() {
+  try {
+    var list = JSON.parse(fs.readFileSync(filePath(PLACES_FILE), "utf8"));
+    return (Array.isArray(list) ? list : []).map(cleanPlace);
+  } catch (e) { if (e.code !== "ENOENT") console.error(e); return []; }
+}
+function writePlaces(list) {
+  writeFile(PLACES_FILE, JSON.stringify(list, null, 2) + "\n");
+}
+
 // Once, on start, after Moments and the slideshow became one section and
-// Memories came in after the Memorial: the old Moments list joins the
-// slideshow list (now Moments), and the transitions move to the new
-// section boundaries.
+// Memories came in after the Memorial, and the Map between the Gallery and
+// Messages: the old Moments list joins the slideshow list (now Moments),
+// and the transitions move to the new section boundaries (the one into
+// Messages still plays arriving at Messages).
 function migrate() {
   try {
     if (fs.existsSync(filePath(OLD_MOMENTS_LIST))) {
@@ -245,7 +278,7 @@ function migrate() {
       console.log("migrate: merged " + OLD_MOMENTS_LIST + " into " + SLIDES_LIST);
     }
     var t = readTransitions(), moved = false;
-    [["dedication>slideshow", "memories>moments"], ["slideshow>moments", "moments>gallery"]].forEach(function (m) {
+    [["dedication>slideshow", "memories>moments"], ["slideshow>moments", "moments>gallery"], ["gallery>messages", "map>messages"]].forEach(function (m) {
       if (!t[m[0]]) return;
       if (!t[m[1]]) t[m[1]] = t[m[0]];
       delete t[m[0]];
@@ -292,7 +325,7 @@ function renamePageFile(file, to) {
 }
 
 // After a delete (or rename), drop the old name from the lists, captions,
-// order, transitions, memories and memorial text (or carry it all over to
+// order, transitions, memories, places and memorial text (or carry it all over to
 // the new name).
 function forgetFile(file, renamedTo) {
   [GALLERY_OUT_LIST, SLIDES_LIST].forEach(function (name) {
@@ -332,6 +365,13 @@ function forgetFile(file, renamedTo) {
     changed = true;
   });
   if (changed) writeMemories(memories);
+  var places = readPlaces(), moved2 = false;
+  places.forEach(function (p) {
+    if (p.photos.indexOf(file) < 0) return;
+    p.photos = p.photos.map(function (f) { return f === file ? renamedTo : f; }).filter(Boolean);
+    moved2 = true;
+  });
+  if (moved2) writePlaces(places);
   var memorial = "";
   try { memorial = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8"); } catch (e) { if (e.code !== "ENOENT") throw e; }
   var tagged = false;
@@ -692,6 +732,27 @@ function action(req, res) {
       try { writeMemories(clean); } catch (e) { console.error(e); return json(res, 500, { error: "Couldn’t save: " + e.code }); }
       return json(res, 200, { ok: true, count: clean.length });
     }
+    // The places editor (the Map), the same way.
+    if (f.action === "places") {
+      var plist;
+      try { plist = JSON.parse(f.data || ""); } catch (e) { plist = null; }
+      if (!Array.isArray(plist)) return json(res, 400, { error: "That didn’t come through right; try again." });
+      if (plist.length > MAX_PLACES) return json(res, 400, { error: "That’s more than " + MAX_PLACES + " places." });
+      var pclean = [], problem = null;
+      plist.forEach(function (raw, i) {
+        var p = cleanPlace(raw);
+        p.photos = p.photos.filter(function (f) { return validFile(f) && fs.existsSync(filePath(f)); });
+        if (!p.text && !p.photos.length && p.lat === null && p.lng === null && !p.date) return; // an empty one
+        if (p.lat === null || p.lng === null) problem = problem || "Place " + (i + 1) + " needs its coordinates (like 33.749, -84.388).";
+        if (p.text.length > MAX_PLACE_TEXT) problem = problem || "Place " + (i + 1) + " is too long (" + MAX_PLACE_TEXT + " characters max).";
+        if (p.photos.length > MAX_MEMORY_PHOTOS) problem = problem || "Place " + (i + 1) + " has more than " + MAX_MEMORY_PHOTOS + " pictures.";
+        pclean.push(p);
+      });
+      if (problem) return json(res, 400, { error: problem });
+      pclean.sort(placeOrder);
+      try { writePlaces(pclean); } catch (e) { console.error(e); return json(res, 500, { error: "Couldn’t save: " + e.code }); }
+      return json(res, 200, { ok: true, count: pclean.length, places: pclean });
+    }
     if (f.action === "settings") {
       var secs = Number(f.slide_seconds);
       if (!(secs >= 1 && secs <= MAX_SLIDE_SECONDS)) msg = "Pick a number of seconds from 1 to " + MAX_SLIDE_SECONDS + ".";
@@ -820,6 +881,7 @@ function hubPage(res, msg) {
       card("/media-admin#title-photo", "Title page photo", "The big photo on the first page.") +
       card("/media-admin#memorial", "Memorial text", "The words in the Memorial section.") +
       card("/media-admin#memories", "Memories", "The little stories in the Memories section, with their photos, GIFs and videos.") +
+      card("/media-admin#places", "Map", "The places on the map and its timeline: a date, coordinates, a description and pictures.") +
       card("/media-admin#slideshow", "Moments timing", "How long each photo shows in Moments.") +
       '</div>' +
       '<h2>You</h2>' +
@@ -949,6 +1011,8 @@ function adminPage(req, res, query) {
     '.mem-pick .photo-grid{max-height:360px;overflow-y:auto}.mem-pick .photo-grid video{width:100%;aspect-ratio:1;object-fit:cover;border-radius:3px;display:block}' +
     '.mem-pick button.is-picked{outline:3px solid #A8571F;outline-offset:-1px}.mem-pick button.is-picked::after{content:attr(data-n);position:absolute;top:6px;right:6px;min-width:20px;height:20px;border-radius:999px;background:#A8571F;color:#fff;font-size:11px;font-weight:600;display:grid;place-items:center}' +
     '.mem-pick-done{padding:3px 12px;font-size:12px;margin-left:6px}' +
+    '.place-row{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-top:6px;font:14px system-ui,sans-serif}.place-row input{font:15px system-ui,sans-serif;padding:6px 8px;border:1px solid #DBC8AE;border-radius:4px}' +
+    '.place-coords input{width:230px}.place-ok{font-size:13px;color:#2F6B3A}.place-ok.err{color:#9b2c2c}' +
     '.mem input.mem-title{width:100%;box-sizing:border-box;margin-top:4px;font:600 16px Georgia,serif;padding:6px 8px;border:1px solid #DBC8AE;border-radius:4px}' +
     '.mem textarea{box-sizing:border-box;width:100%;min-height:120px;font:16px/1.55 Georgia,serif;padding:8px 10px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;resize:vertical;margin-top:8px}' +
     '.mem-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.mem-tools button{padding:4px 10px;font-size:12px}.mem-num{color:#6B5748;font-weight:600;margin-right:auto}' +
@@ -970,7 +1034,7 @@ function adminPage(req, res, query) {
     '.settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:15px system-ui,sans-serif}.settings input{width:80px;margin-left:8px}' +
     '.out{float:right;font:13px system-ui,sans-serif;margin-top:14px}.out button{padding:6px 12px}' +
     '</style></head><body><main><form method="post" action="/admin/logout" class="out"><button>Sign out</button></form><p class="jump"><a href="/admin">← Admin</a></p><h1>Scout’s media</h1>' +
-    '<p class="jump"><a href="#title-photo">Title page photo ↓</a> · <a href="#slideshow">Moments timing ↓</a> · <a href="#memorial">Memorial text ↓</a> · <a href="#memories">Memories ↓</a></p>' +
+    '<p class="jump"><a href="#title-photo">Title page photo ↓</a> · <a href="#slideshow">Moments timing ↓</a> · <a href="#memorial">Memorial text ↓</a> · <a href="#memories">Memories ↓</a> · <a href="#places">Map ↓</a></p>' +
     (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') +
     '<h2>Upload</h2>' +
     '<label class="drop" id="drop">Drop photos or videos here, or click to choose' +
@@ -1023,6 +1087,13 @@ function adminPage(req, res, query) {
     '<div id="memories-editor" class="memories-editor"></div>' +
     '<p><button type="button" id="mem-add">+ Add a memory</button></p>' +
     '<p><button type="button" class="primary" id="mem-save">Save memories</button> <span class="saved" id="mem-saved" aria-live="polite"></span></p>' +
+    '<h2 id="places">Map</h2>' +
+    '<p class="hint">The places on the map in the Map section, shown in date order along a timeline (the page draws a trail between them). Each place needs its <b>coordinates</b>: in Google Maps, right-click the spot and click the numbers at the top to copy them, then paste them here (a Google Maps link works too). Check them with “See it on a map”. ' +
+    'The <b>date</b> places it on the timeline (one without a date goes at the end). The first line of the description is its name on the map; blank lines separate paragraphs, **stars** make words bold, *one star* italic. Pictures (photos, GIFs, videos) work as in the memories, the main one first. Nothing changes on the site until you press <b>Save places</b>.</p>' +
+    '<div id="places-editor" class="memories-editor"></div>' +
+    '<p><button type="button" id="place-add">+ Add a place</button></p>' +
+    '<p><button type="button" class="primary" id="place-save">Save places</button> <span class="saved" id="place-saved" aria-live="polite"></span></p>' +
+    '<script type="application/json" id="places-data">' + JSON.stringify(readPlaces()).replace(/</g, "\\u003c") + '</script>' +
     '<template id="mem-photos">' + photoGridHtml(files) + '</template>' +
     '<script type="application/json" id="memories-data">' + JSON.stringify(readMemories()).replace(/</g, "\\u003c") + '</script>' +
     '</main><script src="/memorial.js"></script><script>(' + adminClient + ')();</script></body></html>';
@@ -1046,7 +1117,7 @@ function photoGridHtml(files) {
     return '<button type="button" data-file="' + esc(f.name) + '" title="' + esc(f.name) + '"><video src="' + esc("/media/" + encodeURIComponent(f.name)) + '#t=0.5" preload="metadata" muted playsinline></video>' +
       '<span class="gif-badge">VIDEO</span><span>' + esc(f.name) + '</span></button>';
   }).join("");
-  return '<div class="photo-pick mem-pick"><p class="hint">Tap photos, GIFs or videos to add them to this memory, in the order you tap them (tap one again to take it off). ' +
+  return '<div class="photo-pick mem-pick"><p class="hint">Tap photos, GIFs or videos to add them, in the order you tap them (tap one again to take it off). ' +
     '<button type="button" class="mem-pick-done">Done</button></p><div class="photo-grid">' + photoButtons(files) + videos + '</div></div>';
 }
 
@@ -1473,18 +1544,23 @@ function adminClient() {
     });
   }
 
-  // The memories editor: one box per memory (title, pictures, story), built
-  // from #memories-data; Save sends them all as JSON.
-  var memBox = document.getElementById("memories-editor");
-  if (memBox) {
-    var memories = JSON.parse(document.getElementById("memories-data").textContent || "[]");
-    var memSaved = JSON.stringify(memories), memNote = document.getElementById("mem-saved");
-    var memPickTpl = document.getElementById("mem-photos");
-    var memOpen = null; // the memory whose picture grid is open
-    memories.forEach(function (m) { m.photos = Array.isArray(m.photos) ? m.photos : m.photo ? [m.photo] : []; delete m.photo; });
-    memSaved = JSON.stringify(memories);
+  // The memories and places editors: one box per item (its fields, its
+  // pictures, its text), built from a JSON <script>; Save sends them all
+  // as JSON. cfg: ids (box, data, add, save, note), action, name ("Memory",
+  // "Place"), fields(m, i, box, dirty) for what goes above the pictures,
+  // blank (a new item), placeholder (the text box), counted(n) for "Saved
+  // (…)", reorder (↑ ↓ buttons), saved(j) with the server's answer.
+  var itemEditor = function (cfg) {
+    var box0 = document.getElementById(cfg.box);
+    if (!box0) return;
+    var items = JSON.parse(document.getElementById(cfg.data).textContent || "[]");
+    var note = document.getElementById(cfg.note);
+    var pickTpl = document.getElementById("mem-photos");
+    var open = null; // the item whose picture grid is open
+    items.forEach(function (m) { m.photos = Array.isArray(m.photos) ? m.photos : m.photo ? [m.photo] : []; delete m.photo; });
+    var savedJson = JSON.stringify(items);
     // A small picture of a file: a video's frame half a second in.
-    var memThumb = function (f) {
+    var thumb = function (f) {
       var el = document.createElement(/\.(mp4|webm|mov|m4v)$/i.test(f) ? "video" : "img");
       el.src = "/media/" + encodeURIComponent(f) + (el.tagName === "VIDEO" ? "#t=0.5" : "");
       if (el.tagName === "VIDEO") { el.muted = true; el.preload = "metadata"; el.setAttribute("playsinline", ""); }
@@ -1492,31 +1568,31 @@ function adminClient() {
       el.title = f;
       return el;
     };
-    var memDirty = function () {
-      memNote.className = "saved";
-      memNote.textContent = JSON.stringify(memories) === memSaved ? "" : "Not saved yet";
+    var dirty = function () {
+      note.className = "saved";
+      note.textContent = JSON.stringify(items) === savedJson ? "" : "Not saved yet";
     };
-    var drawMemories = function () {
-      memBox.textContent = "";
-      if (!memories.length) {
+    var draw = function () {
+      box0.textContent = "";
+      if (!items.length) {
         var none = document.createElement("p");
         none.className = "hint";
-        none.textContent = "No memories yet.";
-        memBox.appendChild(none);
+        none.textContent = cfg.none;
+        box0.appendChild(none);
       }
-      memories.forEach(function (m, i) {
+      items.forEach(function (m, i) {
         var box = document.createElement("div");
         box.className = "mem";
         var tools = document.createElement("div");
         tools.className = "mem-tools";
         var num = document.createElement("span");
         num.className = "mem-num";
-        num.textContent = "Memory " + (i + 1);
+        num.textContent = cfg.name + " " + (i + 1);
         tools.appendChild(num);
-        [["↑", "Move up", i > 0, function () { memories.splice(i - 1, 0, memories.splice(i, 1)[0]); }],
-         ["↓", "Move down", i < memories.length - 1, function () { memories.splice(i + 1, 0, memories.splice(i, 1)[0]); }],
-         ["Delete", "Delete this memory", true, function () { if (confirm("Delete memory " + (i + 1) + (m.title ? ", “" + m.title + "”" : "") + "?")) memories.splice(i, 1); }]
-        ].forEach(function (t) {
+        (cfg.reorder ? [["↑", "Move up", i > 0, function () { items.splice(i - 1, 0, items.splice(i, 1)[0]); }],
+          ["↓", "Move down", i < items.length - 1, function () { items.splice(i + 1, 0, items.splice(i, 1)[0]); }]] : []).concat([
+         ["Delete", "Delete this " + cfg.name.toLowerCase(), true, function () { if (confirm("Delete " + cfg.name.toLowerCase() + " " + (i + 1) + (m.title ? ", “" + m.title + "”" : "") + "?")) items.splice(i, 1); }]
+        ]).forEach(function (t) {
           var b = document.createElement("button");
           b.type = "button";
           b.textContent = t[0];
@@ -1524,29 +1600,21 @@ function adminClient() {
           b.setAttribute("aria-label", t[1]);
           b.disabled = !t[2];
           if (t[0] === "Delete") b.className = "delete";
-          b.addEventListener("click", function () { t[3](); drawMemories(); memDirty(); });
+          b.addEventListener("click", function () { t[3](); draw(); dirty(); });
           tools.appendChild(b);
         });
         box.appendChild(tools);
+        cfg.fields(m, i, box, dirty);
 
-        var title = document.createElement("input");
-        title.className = "mem-title";
-        title.maxLength = 120;
-        title.placeholder = "Title, e.g. The bucket";
-        title.value = m.title || "";
-        title.setAttribute("aria-label", "Title of memory " + (i + 1));
-        title.addEventListener("input", function () { m.title = title.value; memDirty(); });
-        box.appendChild(title);
-
-        // Its pictures, in order, the first the main one (on the card);
-        // each can be made the main one, moved or taken off.
+        // Its pictures, in order, the first the main one; each can be made
+        // the main one, moved or taken off.
         var pics = document.createElement("div");
         pics.className = "mem-pics";
-        var redraw = function () { drawMemories(); memDirty(); };
+        var redraw = function () { draw(); dirty(); };
         m.photos.forEach(function (f, j) {
           var pic = document.createElement("div");
           pic.className = "mem-pic" + (j === 0 ? " is-main" : "");
-          pic.appendChild(memThumb(f));
+          pic.appendChild(thumb(f));
           if (j === 0) {
             var main = document.createElement("span");
             main.className = "mem-main";
@@ -1581,73 +1649,158 @@ function adminClient() {
         box.appendChild(pics);
 
         var text = document.createElement("textarea");
-        text.maxLength = 6000;
-        text.placeholder = "The memory…";
+        text.maxLength = cfg.maxText;
+        text.placeholder = cfg.placeholder;
         text.value = m.text || "";
-        text.setAttribute("aria-label", "Memory " + (i + 1));
-        text.addEventListener("input", function () { m.text = text.value; memDirty(); });
+        text.setAttribute("aria-label", cfg.name + " " + (i + 1));
+        text.addEventListener("input", function () { m.text = text.value; dirty(); });
         box.appendChild(text);
 
         // "Add" opens a grid of photos, GIFs and videos under the pictures:
         // tapping one adds it (at the end) or, if it's already in, takes it off.
         var openPick = function () {
-          var pick = memPickTpl.content.firstElementChild.cloneNode(true);
-          var mark = function () {
-            pick.querySelectorAll("button[data-file]").forEach(function (b) {
-              var n = m.photos.indexOf(b.getAttribute("data-file"));
-              b.classList.toggle("is-picked", n >= 0);
-              b.setAttribute("data-n", n >= 0 ? n + 1 : "");
-            });
-          };
+          var pick = pickTpl.content.firstElementChild.cloneNode(true);
+          pick.querySelectorAll("button[data-file]").forEach(function (b) {
+            var n = m.photos.indexOf(b.getAttribute("data-file"));
+            b.classList.toggle("is-picked", n >= 0);
+            b.setAttribute("data-n", n >= 0 ? n + 1 : "");
+          });
           pick.addEventListener("click", function (e) {
-            if (e.target.closest(".mem-pick-done")) { memOpen = null; return drawMemories(); }
+            if (e.target.closest(".mem-pick-done")) { open = null; return draw(); }
             var b = e.target.closest("button[data-file]");
             if (!b) return;
             var f = b.getAttribute("data-file"), n = m.photos.indexOf(f);
             if (n >= 0) m.photos.splice(n, 1);
-            else if (m.photos.length >= 30) return alert("That’s 30 pictures, the most one memory can have.");
+            else if (m.photos.length >= 30) return alert("That’s 30 pictures, the most one can have.");
             else m.photos.push(f);
-            memOpen = m;
+            open = m;
             var y = pick.querySelector(".photo-grid").scrollTop;
-            drawMemories();
-            memDirty();
-            var again = memBox.querySelector(".mem-pick .photo-grid");
+            draw();
+            dirty();
+            var again = box0.querySelector(".mem-pick .photo-grid");
             if (again) again.scrollTop = y;
           });
-          mark();
           pics.insertAdjacentElement("afterend", pick);
         };
         add.addEventListener("click", function () {
-          if (memOpen === m) { memOpen = null; return drawMemories(); }
-          memOpen = m;
-          drawMemories();
+          open = open === m ? null : m;
+          draw();
         });
-        if (memOpen === m) openPick();
-        memBox.appendChild(box);
+        if (open === m) openPick();
+        box0.appendChild(box);
       });
     };
-    drawMemories();
-    document.getElementById("mem-add").addEventListener("click", function () {
-      memories.push({ title: "", text: "", photos: [] });
-      drawMemories();
-      memDirty();
-      var boxes = memBox.querySelectorAll(".mem");
+    draw();
+    document.getElementById(cfg.add).addEventListener("click", function () {
+      items.push(cfg.blank());
+      draw();
+      dirty();
+      var boxes = box0.querySelectorAll(".mem");
       var last = boxes[boxes.length - 1];
       last.scrollIntoView({ block: "center", behavior: "smooth" });
-      last.querySelector(".mem-title").focus({ preventScroll: true });
+      var first = last.querySelector("input, textarea");
+      if (first) first.focus({ preventScroll: true });
     });
-    document.getElementById("mem-save").addEventListener("click", function () {
-      var sent = JSON.stringify(memories);
-      memNote.className = "saved"; memNote.textContent = "Saving…";
-      fetch("/media-admin", { method: "POST", body: new URLSearchParams({ action: "memories", data: sent }) })
+    document.getElementById(cfg.save).addEventListener("click", function () {
+      var sent = JSON.stringify(items);
+      note.className = "saved"; note.textContent = "Saving…";
+      fetch("/media-admin", { method: "POST", body: new URLSearchParams({ action: cfg.action, data: sent }) })
         .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error); return j; }); })
         .then(function (j) {
-          memSaved = sent;
-          memNote.textContent = "Saved (" + j.count + " memor" + (j.count === 1 ? "y" : "ies") + ")";
-        }, function (e) { memNote.className = "saved err"; memNote.textContent = (e && e.message) || "Couldn’t save"; });
+          if (j.places) { items = j.places; draw(); } // back in date order
+          savedJson = JSON.stringify(items);
+          note.textContent = "Saved (" + cfg.counted(j.count) + ")";
+        }, function (e) { note.className = "saved err"; note.textContent = (e && e.message) || "Couldn’t save"; });
     });
-    window.addEventListener("beforeunload", function (e) { if (JSON.stringify(memories) !== memSaved) { e.preventDefault(); e.returnValue = ""; } });
-  }
+    window.addEventListener("beforeunload", function (e) { if (JSON.stringify(items) !== savedJson) { e.preventDefault(); e.returnValue = ""; } });
+  };
+
+  itemEditor({
+    box: "memories-editor", data: "memories-data", add: "mem-add", save: "mem-save", note: "mem-saved",
+    action: "memories", name: "Memory", none: "No memories yet.", reorder: true, maxText: 6000, placeholder: "The memory…",
+    blank: function () { return { title: "", text: "", photos: [] }; },
+    counted: function (n) { return n + " memor" + (n === 1 ? "y" : "ies"); },
+    fields: function (m, i, box, dirty) {
+      var title = document.createElement("input");
+      title.className = "mem-title";
+      title.maxLength = 120;
+      title.placeholder = "Title, e.g. The bucket";
+      title.value = m.title || "";
+      title.setAttribute("aria-label", "Title of memory " + (i + 1));
+      title.addEventListener("input", function () { m.title = title.value; dirty(); });
+      box.appendChild(title);
+    }
+  });
+
+  // A place's coordinates from whatever was pasted: "33.749, -84.388",
+  // "33.749 -84.388", a Google Maps link (…/@33.749,-84.388,…) or with
+  // N/S/E/W ("33.749 N, 84.388 W"). null if it can't be read.
+  var readCoords = function (s) {
+    s = String(s || "").trim();
+    var m = /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/.exec(s) ||
+      /(-?\d+(?:\.\d+)?)\s*°?\s*([NS])?[\s,;]+(-?\d+(?:\.\d+)?)\s*°?\s*([EW])?/i.exec(s);
+    if (!m) return null;
+    var lat, lng;
+    if (m.length > 3) {
+      lat = Number(m[1]) * (/s/i.test(m[2] || "") ? -1 : 1);
+      lng = Number(m[3]) * (/w/i.test(m[4] || "") ? -1 : 1);
+    } else { lat = Number(m[1]); lng = Number(m[2]); }
+    return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? [lat, lng] : null;
+  };
+  itemEditor({
+    box: "places-editor", data: "places-data", add: "place-add", save: "place-save", note: "place-saved",
+    action: "places", name: "Place", none: "No places yet.", reorder: false, maxText: 3000,
+    placeholder: "What happened here… (the first line shows as its name on the map)",
+    blank: function () { return { date: "", lat: null, lng: null, text: "", photos: [] }; },
+    counted: function (n) { return n + " place" + (n === 1 ? "" : "s"); },
+    fields: function (m, i, box, dirty) {
+      var row = document.createElement("div");
+      row.className = "place-row";
+      var dl = document.createElement("label");
+      dl.textContent = "Date ";
+      var date = document.createElement("input");
+      date.type = "date";
+      date.value = m.date || "";
+      date.addEventListener("input", function () { m.date = date.value; dirty(); });
+      dl.appendChild(date);
+      var cl = document.createElement("label");
+      cl.className = "place-coords";
+      cl.textContent = "Coordinates ";
+      var coords = document.createElement("input");
+      coords.type = "text";
+      coords.placeholder = "e.g. 33.749, -84.388";
+      coords.value = m.lat !== null && m.lat !== undefined ? m.lat + ", " + m.lng : "";
+      var ok = document.createElement("a");
+      ok.className = "place-ok";
+      ok.target = "_blank";
+      ok.rel = "noopener";
+      var show = function () {
+        var c = readCoords(coords.value);
+        if (c) {
+          ok.textContent = "✓ See it on a map";
+          ok.href = "https://www.openstreetmap.org/?mlat=" + c[0] + "&mlon=" + c[1] + "#map=12/" + c[0] + "/" + c[1];
+          ok.classList.remove("err");
+        } else {
+          ok.textContent = coords.value.trim() ? "Can’t read these" : "";
+          ok.removeAttribute("href");
+          ok.classList.add("err");
+        }
+        return c;
+      };
+      coords.addEventListener("input", function () {
+        var c = show();
+        m.lat = c ? Math.round(c[0] * 1e6) / 1e6 : null;
+        m.lng = c ? Math.round(c[1] * 1e6) / 1e6 : null;
+        dirty();
+      });
+      cl.appendChild(coords);
+      row.appendChild(dl);
+      row.appendChild(cl);
+      row.appendChild(ok);
+      show();
+      box.appendChild(row);
+    }
+  });
 
   var drop = document.getElementById("drop"), pick = document.getElementById("pick"), prog = document.getElementById("progress");
   if (!drop) return;

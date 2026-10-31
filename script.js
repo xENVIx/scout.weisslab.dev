@@ -432,16 +432,19 @@ var clipQueue = Promise.resolve();
     go(dir);
   }, { passive: false });
 
-  var touchX = 0, touchY = 0, touchTop = false, touchBottom = false;
+  // .keeps-input (the map) has its own drags and keys; a swipe or key
+  // press there doesn't change the scene.
+  var touchX = 0, touchY = 0, touchTop = false, touchBottom = false, touchOwn = false;
   window.addEventListener("touchstart", function (e) {
     var el = list[current];
+    touchOwn = !!(e.target.closest && e.target.closest(".keeps-input"));
     touchX = e.touches[0].clientX;
     touchY = e.touches[0].clientY;
     touchTop = atTop(el);
     touchBottom = atBottom(el);
   }, { passive: true });
   window.addEventListener("touchend", function (e) {
-    if (busy() || Date.now() < lockUntil) return;
+    if (busy() || touchOwn || Date.now() < lockUntil) return;
     var dx = e.changedTouches[0].clientX - touchX;
     var dy = touchY - e.changedTouches[0].clientY; // > 0 means swiped up (toward the next scene)
     if (Math.abs(dy) < 50 || Math.abs(dy) < Math.abs(dx) * 1.2) return; // too short, or a sideways slideshow swipe
@@ -454,6 +457,7 @@ var clipQueue = Promise.resolve();
     if (clipShown) { if (!e.repeat && e.key !== "Tab" && e.key !== "Shift") { e.preventDefault(); skipClip(); } return; }
     var tag = e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "VIDEO") return;
+    if (e.target.closest && e.target.closest(".keeps-input")) return;
     var el = list[current];
     var page = el.clientHeight * 0.85;
     var dir = 0, step = 0;
@@ -1626,6 +1630,271 @@ function soundButton(v) {
   document.addEventListener("scenechange", soon);
   scenes.forEach(function (s) { s.addEventListener("scroll", soon, { passive: true }); });
   window.addEventListener("resize", soon);
+})();
+
+/* Map: the places Scout went, from media/places.json ([{ date, lat, lng,
+   text, photos }], edited at /media-admin, kept in date order), on a
+   map (Leaflet, loaded from cdnjs once the Map is near, with
+   OpenStreetMap's tiles) and a timeline under it. A trail joins the places
+   in order, solid up to the one picked and dashed after it. Picking one
+   (its pin, its dot on the timeline, the arrows, or Play, which goes
+   through them every PLAY_MS while the Map is on screen) flies the map to
+   it and shows it in .map-card: its date, its text (the first line as its
+   name; **bold** / *italic* via memorialInline) and its pictures (the
+   main one large, the rest as thumbnails to swap in; a tap opens the
+   lightbox). Timeline dots are placed by date; undated places go at the
+   end. The map ignores the mouse wheel (it changes the section, as
+   everywhere), and as .keeps-input, swipes and keys on it move the map
+   instead of the scenes. */
+(function mapSection() {
+  var section = document.getElementById("map");
+  if (!section) return;
+  var DIR = "media/", PLAY_MS = 5000, ZOOM = 10;
+  var LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
+  var VIDEO_RE = /\.(mp4|webm|mov|m4v)$/i;
+  var wrap = document.getElementById("map-wrap"), canvas = document.getElementById("map-canvas");
+  var card = document.getElementById("map-card"), timeline = document.getElementById("map-timeline");
+  var track = document.getElementById("tl-track"), count = document.getElementById("map-count");
+  var playBtn = document.getElementById("map-play");
+  var reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var places = [], at = -1, map = null, pins = [], trailDone = null, dots = [], playTimer = null;
+
+  function url(f) { return DIR + encodeURIComponent(f); }
+  function nameOf(p) { return (p.text || "").split("\n")[0].replace(/\*+/g, "").trim(); }
+  function niceDate(d) {
+    if (!d) return "";
+    var t = new Date(d + "T12:00:00");
+    return isNaN(t) ? d : t.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  }
+
+  fetch(DIR + "places.json", { cache: "no-cache" })
+    .then(function (r) { return r.ok ? r.json() : []; })
+    .catch(function () { return []; })
+    .then(function (list) {
+      places = (Array.isArray(list) ? list : []).filter(function (p) {
+        return p && isFinite(p.lat) && isFinite(p.lng) && p.lat !== null && p.lng !== null;
+      });
+      if (!places.length) { document.getElementById("map-empty").hidden = false; return; }
+      wrap.hidden = false;
+      timeline.hidden = false;
+      buildTimeline();
+      // The map and the first place's pictures once the Map is near.
+      whenNear(section, function () { pick(0, false); loadLeaflet(); });
+    });
+
+  // ---- the timeline ----
+  function buildTimeline() {
+    var dated = places.filter(function (p) { return p.date; });
+    var t0 = dated.length ? Date.parse(dated[0].date) : 0, t1 = dated.length ? Date.parse(dated[dated.length - 1].date) : 0;
+    var undated = places.length - dated.length;
+    // Dated ones spread by date over the track (all of it, or 85% when
+    // there are undated ones to go after them).
+    var span = undated ? (dated.length ? 0.85 : 0) : 1;
+    function x(i) {
+      var p = places[i];
+      if (p.date) return dated.length < 2 || t1 === t0 ? (dated.length < 2 ? 0 : i / (dated.length - 1)) * span : (Date.parse(p.date) - t0) / (t1 - t0) * span;
+      var k = i - dated.length;
+      return span + (1 - span) * (undated > 1 ? k / (undated - 1) : dated.length ? 1 : 0.5);
+    }
+    // A label for each year the timeline crosses.
+    if (dated.length && t1 > t0) {
+      var y0 = new Date(t0).getFullYear(), y1 = new Date(t1).getFullYear();
+      var every = Math.max(1, Math.ceil((y1 - y0 + 1) / 8));
+      var last = -1;
+      for (var y = y0; y <= y1; y += every) {
+        var ty = Math.max(t0, Date.parse(y + "-01-01T00:00:00")), left = (ty - t0) / (t1 - t0) * span * 100;
+        if (last >= 0 && left - last < 7) continue; // too close to the one before
+        last = left;
+        var lab = document.createElement("span");
+        lab.className = "tl-year";
+        lab.style.left = left + "%";
+        lab.textContent = y;
+        track.appendChild(lab);
+      }
+    }
+    dots = places.map(function (p, i) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "tl-dot";
+      b.style.left = (x(i) * 100) + "%";
+      var label = [niceDate(p.date), nameOf(p)].filter(Boolean).join(": ") || "Place " + (i + 1);
+      b.setAttribute("aria-label", label);
+      b.title = label;
+      b.addEventListener("click", function () { stop(); pick(i, true); });
+      track.appendChild(b);
+      return b;
+    });
+  }
+
+  // ---- the map ----
+  function loadLeaflet() {
+    if (window.L) return makeMap();
+    var css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = LEAFLET + "leaflet.min.css";
+    document.head.appendChild(css);
+    var js = document.createElement("script");
+    js.src = LEAFLET + "leaflet.min.js";
+    js.onload = makeMap;
+    js.onerror = function () { canvas.classList.add("is-failed"); canvas.textContent = "The map couldn’t load."; };
+    document.head.appendChild(js);
+  }
+  function makeMap() {
+    var L = window.L;
+    map = L.map(canvas, { scrollWheelZoom: false, zoomSnap: 0.5, worldCopyJump: true });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+    var lls = places.map(function (p) { return [p.lat, p.lng]; });
+    L.polyline(lls, { className: "map-trail", weight: 2, dashArray: "4 6", interactive: false }).addTo(map);
+    trailDone = L.polyline([], { className: "map-trail is-done", weight: 3, interactive: false }).addTo(map);
+    pins = places.map(function (p, i) {
+      var m = L.marker([p.lat, p.lng], {
+        icon: L.divIcon({ className: "map-pin", html: "<span>" + (i + 1) + "</span>", iconSize: [26, 26], iconAnchor: [13, 13] }),
+        title: nameOf(p) || niceDate(p.date) || "Place " + (i + 1),
+        riseOnHover: true
+      }).addTo(map);
+      m.on("click", function () { stop(); pick(i, true); });
+      return m;
+    });
+    if (lls.length > 1) map.fitBounds(lls, { padding: [40, 40], maxZoom: ZOOM });
+    else map.setView(lls[0], ZOOM);
+    mark(false);
+    // Laid out while its scene may have been hidden; measure again on arrival.
+    document.addEventListener("scenechange", function () { if (map) map.invalidateSize(); });
+  }
+  function mark(fly) {
+    if (!map) return;
+    pins.forEach(function (m, i) {
+      var el = m.getElement();
+      if (el) el.classList.toggle("is-current", i === at), el.classList.toggle("is-past", i < at);
+      m.setZIndexOffset(i === at ? 1000 : 0);
+    });
+    trailDone.setLatLngs(places.slice(0, at + 1).map(function (p) { return [p.lat, p.lng]; }));
+    if (!fly) return;
+    var ll = [places[at].lat, places[at].lng], z = Math.max(map.getZoom(), ZOOM - 2);
+    if (reduceMotion) map.setView(ll, z);
+    else map.flyTo(ll, z, { duration: 1.4 });
+  }
+
+  // ---- picking a place ----
+  function pick(i, fly) {
+    if (i < 0 || i >= places.length) return;
+    at = i;
+    var p = places[i];
+    count.textContent = (i + 1) + " / " + places.length;
+    dots.forEach(function (d, j) {
+      d.classList.toggle("is-current", j === i);
+      d.classList.toggle("is-past", j < i);
+      if (j === i) d.setAttribute("aria-current", "true"); else d.removeAttribute("aria-current");
+    });
+    document.getElementById("map-prev").disabled = i === 0;
+    document.getElementById("map-next").disabled = i === places.length - 1;
+    fillCard(p);
+    mark(fly);
+  }
+  function fillCard(p) {
+    card.textContent = "";
+    var photos = (Array.isArray(p.photos) ? p.photos : []).filter(function (f) { return typeof f === "string" && f; });
+    if (photos.length) {
+      var stage = document.createElement("div");
+      stage.className = "map-pic";
+      card.appendChild(stage);
+      var showPic = function (f) {
+        stage.textContent = "";
+        var el;
+        if (VIDEO_RE.test(f)) {
+          el = document.createElement("video");
+          el.muted = true;
+          el.playsInline = true;
+          el.controls = true;
+          el.preload = "metadata";
+          el.src = url(f) + "#t=0.1";
+        } else {
+          el = document.createElement("img");
+          el.alt = nameOf(p);
+          el.src = smaller(url(f), 1600);
+          el.addEventListener("click", function () {
+            if (window.scoutLightbox) window.scoutLightbox(url(f), false, nameOf(p));
+          });
+        }
+        stage.appendChild(el);
+      };
+      showPic(photos[0]);
+      if (photos.length > 1) {
+        var strip = document.createElement("div");
+        strip.className = "map-thumbs";
+        photos.forEach(function (f, j) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.setAttribute("aria-label", "Picture " + (j + 1));
+          if (j === 0) b.className = "is-current";
+          var t = VIDEO_RE.test(f) ? document.createElement("video") : document.createElement("img");
+          if (t.tagName === "VIDEO") { t.muted = true; t.preload = "metadata"; t.src = url(f) + "#t=0.5"; }
+          else { t.alt = ""; t.src = smaller(url(f), 640); }
+          b.appendChild(t);
+          b.addEventListener("click", function () {
+            stop();
+            Array.prototype.forEach.call(strip.children, function (c) { c.classList.toggle("is-current", c === b); });
+            showPic(f);
+          });
+          strip.appendChild(b);
+        });
+        card.appendChild(strip);
+      }
+    }
+    if (p.date) {
+      var d = document.createElement("div");
+      d.className = "map-date";
+      d.textContent = niceDate(p.date);
+      card.appendChild(d);
+    }
+    var paras = String(p.text || "").split(/\n\s*\n/), first = true;
+    paras.forEach(function (para) {
+      para = para.trim();
+      if (!para) return;
+      if (first) {
+        // The first line is its name; the rest of that paragraph follows.
+        var lines = para.split("\n"), h = document.createElement("h3");
+        memorialInline(lines.shift(), h);
+        card.appendChild(h);
+        para = lines.join("\n").trim();
+        first = false;
+        if (!para) return;
+      }
+      var el = document.createElement("p");
+      memorialInline(para, el);
+      card.appendChild(el);
+    });
+  }
+
+  // ---- arrows and Play ----
+  document.getElementById("map-prev").addEventListener("click", function () { stop(); pick(at - 1, true); });
+  document.getElementById("map-next").addEventListener("click", function () { stop(); pick(at + 1, true); });
+  function shown() { var sc = section.closest(".scene"); return !sc || sc.classList.contains("is-shown"); }
+  function stop() {
+    clearTimeout(playTimer);
+    playTimer = null;
+    playBtn.textContent = "Play";
+    playBtn.setAttribute("aria-pressed", "false");
+  }
+  function step() {
+    var lb = document.getElementById("lightbox");
+    if (shown() && !(lb && !lb.hidden)) {
+      if (at >= places.length - 1) return stop();
+      pick(at + 1, true);
+    }
+    playTimer = setTimeout(step, PLAY_MS);
+  }
+  playBtn.addEventListener("click", function () {
+    if (playTimer) return stop();
+    playBtn.textContent = "Pause";
+    playBtn.setAttribute("aria-pressed", "true");
+    if (at >= places.length - 1) pick(0, true); // from the start again
+    else pick(at + 1, true);
+    playTimer = setTimeout(step, PLAY_MS);
+  });
 })();
 
 /* Messages: visitors leave a note for Scout, up to MAX_FILES photos, GIFs
