@@ -680,7 +680,8 @@ footer .eyebrow { margin-top: 14px; }
 
 /* ---- Scout chasing a frisbee along the bottom (script.js, scoutRun()):
    .runner-go is moved across; .is-running while it moves, .is-left when
-   he's heading back, .is-caught on the last section. Under the clips,
+   he's heading back, .is-caught from catching it on the last section
+   until he's back at the start. Under the clips,
    the memory reader and the lightbox. ---- */
 .runner {
   position: fixed; left: 0; right: 0; bottom: max(6px, env(safe-area-inset-bottom)); z-index: 400;
@@ -688,10 +689,7 @@ footer .eyebrow { margin-top: 14px; }
 }
 .runner-go { position: absolute; left: 0; bottom: 0; will-change: transform; }
 .runner.is-ready .runner-go { transition: transform 1200ms cubic-bezier(.45,.05,.35,1); }
-.runner-dog { display: block; width: 58px; height: auto; overflow: visible; transition: transform 250ms ease, opacity 250ms; }
-/* He can be tapped (the rest of .runner lets taps through). */
-.runner-dog { pointer-events: auto; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.runner.is-away .runner-dog { opacity: 0; }
+.runner-dog { display: block; width: 58px; height: auto; overflow: visible; transition: transform 250ms ease; }
 .runner.is-left .runner-dog { transform: scaleX(-1); }
 .runner .leg, .runner .tail { transform-box: fill-box; }
 .runner .leg { transform-origin: 50% 0; }
@@ -743,55 +741,5 @@ footer .eyebrow { margin-top: 14px; }
 @media (prefers-reduced-motion: reduce) {
   .runner.is-ready .runner-go { transition: none; }
   .runner *, .runner .tail { animation: none !important; }
-}
-
-/* ---- Tapping Scout: he comes up to the screen and licks it (scoutRun(),
-   script.js). .lick covers the screen without catching taps; the face
-   grows from where he was, looks out, licks (.is-licking), and backs away.
-   Each lick leaves a .smear and .drop s running down the glass. ---- */
-.lick { position: fixed; inset: 0; z-index: 800; pointer-events: none; overflow: hidden; }
-.lick-face {
-  position: absolute; left: 50%; bottom: 10vh;
-  width: min(66vmin, 480px); margin-left: calc(min(66vmin, 480px) / -2);
-  filter: drop-shadow(0 20px 40px rgba(64,42,25,.25));
-}
-.lick-face svg { display: block; width: 100%; height: auto; overflow: visible; }
-.lick-face .lick-head, .lick-face .lick-tongue, .lick-face .lick-eyes { transform-box: fill-box; }
-.lick-face .lick-head { transform-origin: 50% 80%; }
-.lick-face .lick-tongue { transform-origin: 50% 0; transform: scaleY(.6); } /* panting, as he so often was */
-.lick-face .lick-eyes { transform-origin: 50% 50%; }
-.lick-face.is-coming svg { animation: lick-bound 200ms ease-in-out infinite alternate; }
-.lick-face.is-looking .lick-head { animation: lick-tilt 1400ms ease-in-out infinite alternate; }
-.lick-face.is-looking .lick-eyes { animation: lick-blink 2600ms 300ms; }
-.lick-face.is-licking svg { animation: lick-push 700ms ease-in-out; }
-.lick-face.is-licking .lick-tongue { animation: lick-tongue 700ms ease-in-out; }
-@keyframes lick-bound { from { transform: translateY(0); } to { transform: translateY(-3%); } }
-@keyframes lick-tilt { from { transform: rotate(-7deg); } to { transform: rotate(5deg); } }
-@keyframes lick-blink { 0%, 90%, 100% { transform: scaleY(1); } 94% { transform: scaleY(.1); } }
-@keyframes lick-push { 0%, 100% { transform: scale(1); } 45% { transform: scale(1.08) translateY(-2%); } }
-@keyframes lick-tongue {
-  0% { transform: scaleY(.6); }
-  30% { transform: scaleY(1.25); }
-  50% { transform: scaleY(1.35) scaleX(1.35); } /* flat against the glass */
-  75% { transform: scaleY(.9) scaleX(1.1); }
-  100% { transform: scaleY(.6); }
-}
-.smear {
-  position: absolute; transform: translate(-50%, -50%); border-radius: 50%;
-  background: radial-gradient(ellipse at 45% 40%, rgba(255,255,255,.55), rgba(235,242,246,.28) 45%, rgba(220,232,240,0) 70%);
-  box-shadow: inset 0 0 18px rgba(255,255,255,.35);
-  -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px);
-  -webkit-mask-image: radial-gradient(ellipse closest-side, #000 55%, transparent 100%);
-  mask-image: radial-gradient(ellipse closest-side, #000 55%, transparent 100%);
-}
-/* A drop: clear, with a highlight and a wet streak behind it. */
-.drop {
-  position: absolute; border-radius: 50% 50% 50% 50% / 62% 62% 40% 40%;
-  background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.95) 0 12%, rgba(214,232,244,.5) 30%, rgba(150,185,210,.35) 70%, rgba(120,160,190,.55) 100%);
-  box-shadow: 0 1px 2px rgba(64,42,25,.25), inset 0 -1px 1px rgba(255,255,255,.6);
-}
-.drop::before {
-  content: ""; position: absolute; left: 32%; width: 36%; bottom: 70%; height: 46px;
-  border-radius: 999px; background: linear-gradient(to bottom, rgba(225,238,246,0), rgba(225,238,246,.45));
 }
 

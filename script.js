@@ -1474,11 +1474,12 @@ function soundButton(v) {
    across he is follows how far through the page you are: each section is
    a stretch of the way, and scrolling down inside one moves him along it,
    so he gets to the next section's spot as you get there. On the last
-   section (Messages) he leaps and catches it. He runs while he's moving,
-   keeps facing the way he last went (the frisbee ahead of him), and
-   otherwise stands wagging. The bottom of each section fades out
-   (.runway) to make room for him. Tapping him, he comes up and licks
-   the screen. Only with the
+   section (Messages) he leaps and catches it, and keeps it in his mouth,
+   tail wagging, until he's run all the way back to the start (or the
+   page is reloaded). He runs while he's moving, keeps facing the way he
+   last went (the frisbee ahead of him), and otherwise stands wagging.
+   The bottom of each section fades out (.runway) to make room for him.
+   Only with the
    scenes; drawn in SVG, sized and animated in style.css (.runner). */
 (function scoutRun() {
   var RUN_MS = 1200; // as long as .runner-go's transition in style.css
@@ -1563,7 +1564,6 @@ function soundButton(v) {
     var right = (dots ? window.innerWidth - dots.getBoundingClientRect().left : 0) + 10;
     var lead = 46; // room for the frisbee ahead of him
     var nx = Math.round(left + at.p * Math.max(0, window.innerWidth - left - right - dog.getBoundingClientRect().width - lead));
-    if (!at.last && caught) letGo();
     // He faces the way the visitor last went (to a later or earlier
     // section, or scrolling down or up), the frisbee always ahead of him;
     // not by which way he moves, since a section growing as its photos
@@ -1579,11 +1579,14 @@ function soundButton(v) {
       stopTimer = setTimeout(function () {
         running = false;
         runner.classList.remove("is-running");
-        if (where().last && !caught) jump();
+        var w = where();
+        if (w.last && !caught) jump();
+        else if (caught && w.p <= 0) letGo(); // back at the start: drops it
       }, RUN_MS);
     }
     runner.classList.toggle("is-left", facing < 0);
     if (at.last && !caught && !running) jump();
+    if (caught && at.p <= 0 && !running) letGo();
     x = nx;
     go.style.transform = "translateX(" + nx + "px)";
   }
@@ -1598,127 +1601,6 @@ function soundButton(v) {
   document.addEventListener("scenechange", soon);
   scenes.forEach(function (s) { s.addEventListener("scroll", soon, { passive: true }); });
   window.addEventListener("resize", soon);
-
-  // Tapping him: he runs up to the screen (his face, front on, growing from
-  // where he is), looks out, licks the glass twice (each leaving a wet
-  // smear and drops that run down the screen), then backs away and is back
-  // in his place. .lick and the rest in style.css.
-  // Front on, from his later photos: a broad, flat-topped head with the
-  // ears set high, narrowing to a longish muzzle; red-gold, with his face
-  // gone pale (white muzzle and round the eyes), big black nose, soft dark
-  // eyes, tongue out; neon yellow collar, teal and red tags.
-  var LICK_FACE = '<svg viewBox="0 0 200 220">' +
-    '<path d="M44 150c-6 34-4 70-2 110 2 50 4 110 4 160h108c0-50 2-110 4-160 2-40 4-76-2-110z" fill="#C98445"/>' +
-    '<path d="M70 176c3 30 2 70-2 130M130 176c-3 30-2 70 2 130M100 214v90M54 190c-2 30-2 60 0 100M146 190c2 30 2 60 0 100" stroke="#E6BD84" stroke-width="5" stroke-linecap="round" fill="none" opacity=".6"/>' +
-    '<path d="M50 166c14 16 31 25 50 25s36-9 50-25" stroke="#D8F51E" stroke-width="9" fill="none"/>' +
-    '<path d="M52 162.5c14 15 30 23.5 48 23.5s34-8.5 48-23.5" stroke="#F0FF8A" stroke-width="1.6" fill="none" opacity=".7"/>' +
-    '<circle cx="100" cy="198" r="4.5" fill="none" stroke="#B9B9B9" stroke-width="2"/>' +
-    '<rect x="78" y="203" width="16" height="15" rx="4" fill="#C8323A" transform="rotate(-14 86 210)"/>' +
-    '<rect x="87" y="201" width="28" height="20" rx="4" fill="#2E9C9C"/>' +
-    '<rect x="89" y="210" width="24" height="8" rx="1.5" fill="#1E3B44"/>' +
-    '<text x="101" y="208" font-size="5" font-family="Arial,sans-serif" font-weight="700" fill="#fff" text-anchor="middle">HELLO</text>' +
-    '<text x="101" y="216.4" font-size="5.6" font-family="Arial,sans-serif" font-weight="700" fill="#fff" text-anchor="middle">SCOUT</text>' +
-    '<g class="lick-head">' +
-    '<path d="M60 38C42 38 29 64 27 98c-1 22 2 42 9 52 4 6 12 4 14-2 4 4 10 0 10-6 2-22 2-52 6-82 1-10 0-18-6-22z" fill="#B8743A"/>' +
-    '<path d="M140 38c18 0 31 26 33 60 1 22-2 42-9 52-4 6-12 4-14-2-4 4-10 0-10-6-2-22-2-52-6-82-1-10 0-18 6-22z" fill="#B8743A"/>' +
-    '<path d="M48 74c-2-28 22-44 52-44s54 16 52 44c0 24-4 42-12 54-4 8-6 22-10 34-6 14-18 20-30 20s-24-6-30-20c-4-12-6-26-10-34-8-12-12-30-12-54z" fill="#D29A5E"/>' +
-    '<path d="M100 33c-8 14-10 32-9 48h18c1-16-1-34-9-48z" fill="#E7CBA0"/>' +
-    '<path d="M64 92c2-14 20-18 36-12 16-6 34-2 36 12 2 14-2 26-6 34-2 10-2 24-6 36-6 12-14 18-24 18s-18-6-24-18c-4-12-4-26-6-36-4-8-8-20-6-34z" fill="#EFE0C6"/>' +
-    '<path d="M62 84q10-9 22-5M138 84q-10-9-22-5" stroke="#B8743A" stroke-width="3" fill="none" stroke-linecap="round" opacity=".8"/>' +
-    '<g class="lick-eyes">' +
-    '<path d="M70 97c3-7 15-8 20-1-2 6-7 9-11 9s-8-3-9-8z" fill="#3B2416" stroke="#2A1A12" stroke-width="1.8"/>' +
-    '<path d="M130 97c-3-7-15-8-20-1 2 6 7 9 11 9s8-3 9-8z" fill="#3B2416" stroke="#2A1A12" stroke-width="1.8"/>' +
-    '<circle cx="82.5" cy="96.5" r="2.2" fill="#fff" opacity=".9"/><circle cx="117.5" cy="96.5" r="2.2" fill="#fff" opacity=".9"/></g>' +
-    '<g class="lick-tongue"><path d="M86 160c-1 24 5 36 14 36s15-12 14-36z" fill="#DD7486"/><path d="M100 164v22" stroke="#C25A6D" stroke-width="2" stroke-linecap="round"/></g>' +
-    '<path d="M100 150v8m0 0c-7 7-18 8-25 2m25-2c7 7 18 8 25 2" stroke="#2A1A12" stroke-width="3" fill="none" stroke-linecap="round"/>' +
-    '<path d="M79 136c0-14 42-14 42 0 0 10-14 16-21 16s-21-6-21-16z" fill="#1B1411"/>' +
-    '<ellipse cx="90" cy="141" rx="3.6" ry="2.2" fill="#000" opacity=".55"/><ellipse cx="110" cy="141" rx="3.6" ry="2.2" fill="#000" opacity=".55"/>' +
-    '<ellipse cx="91" cy="130.5" rx="6.5" ry="2.4" fill="#fff" opacity=".28"/>' +
-    '</g>' +
-    '</svg>';
-  var licking = false;
-  function after(ms, fn) { return setTimeout(fn, ms); }
-  dog.addEventListener("click", function () {
-    if (licking || reduceMotion || !dog.animate) return;
-    licking = true;
-    var layer = document.createElement("div");
-    layer.className = "lick";
-    layer.setAttribute("aria-hidden", "true");
-    var face = document.createElement("div");
-    face.className = "lick-face is-coming";
-    face.innerHTML = LICK_FACE;
-    layer.appendChild(face);
-    document.body.appendChild(layer);
-    var tongue = face.querySelector(".lick-tongue");
-    // From his head down at the bottom, growing as he comes up to the glass.
-    var d = dog.getBoundingClientRect(), f = face.getBoundingClientRect();
-    var from = "translate(" + Math.round(d.left + d.width * (facing < 0 ? 0.25 : 0.75) - (f.left + f.width / 2)) + "px," +
-      Math.round(d.top + d.height * 0.3 - (f.top + f.height / 2)) + "px) scale(" + (d.height * 0.6 / f.height).toFixed(3) + ")";
-    runner.classList.add("is-away");
-    face.animate([
-      { transform: from, opacity: 0 },
-      { transform: from, opacity: 1, offset: 0.1 },
-      { transform: "translateY(4%) scale(.92)", opacity: 1, offset: 0.8 },
-      { transform: "none", opacity: 1 }
-    ], { duration: 1000, easing: "cubic-bezier(.35,.1,.3,1)", fill: "forwards" });
-    after(1000, function () { face.classList.remove("is-coming"); face.classList.add("is-looking"); });
-    [1700, 2500].forEach(function (t) {
-      after(t, function () {
-        face.classList.remove("is-licking");
-        void face.offsetWidth;
-        face.classList.add("is-licking");
-      });
-      after(t + 330, function () { // the tongue flat on the glass
-        var r = tongue.getBoundingClientRect();
-        wet(layer, r.left + r.width / 2, r.bottom - r.height * 0.25, r.width);
-      });
-    });
-    after(3400, function () {
-      face.classList.remove("is-looking", "is-licking");
-      face.animate([
-        { transform: "none", opacity: 1 },
-        { transform: "translateY(30%) scale(.55)", opacity: 0.9, offset: 0.6 },
-        { transform: "translateY(60%) scale(.3)", opacity: 0 }
-      ], { duration: 900, easing: "ease-in", fill: "forwards" });
-    });
-    after(4300, function () {
-      layer.removeChild(face);
-      runner.classList.remove("is-away");
-      runner.classList.add("is-running"); // a happy trot in place
-      after(700, function () { if (!running) runner.classList.remove("is-running"); });
-      licking = false;
-    });
-    after(11000, function () { if (layer.parentNode) layer.parentNode.removeChild(layer); });
-  });
-  // A wet smear where the tongue was, and drops running down from it.
-  function wet(layer, x, y, w) {
-    var smear = document.createElement("i");
-    smear.className = "smear";
-    smear.style.left = x + "px";
-    smear.style.top = y + "px";
-    smear.style.width = w * 1.6 + "px";
-    smear.style.height = w * 1.1 + "px";
-    layer.appendChild(smear);
-    smear.animate([{ opacity: 0 }, { opacity: 1, offset: 0.05 }, { opacity: 1, offset: 0.6 }, { opacity: 0 }], { duration: 6500, fill: "forwards" });
-    for (var k = 0; k < 7; k++) {
-      var drop = document.createElement("i");
-      var size = 7 + Math.random() * 9;
-      drop.className = "drop";
-      drop.style.width = size + "px";
-      drop.style.height = size * 1.3 + "px";
-      drop.style.left = x + (Math.random() - 0.5) * w * 1.3 + "px";
-      drop.style.top = y + (Math.random() - 0.4) * w * 0.6 + "px";
-      layer.appendChild(drop);
-      var fall = (0.3 + Math.random() * 0.55) * window.innerHeight;
-      drop.animate([
-        { transform: "translateY(0)", opacity: 0 },
-        { transform: "translateY(0)", opacity: 1, offset: 0.06 },
-        { transform: "translateY(" + Math.round(fall * 0.12) + "px)", offset: 0.45 },
-        { transform: "translateY(" + Math.round(fall) + "px)", opacity: 0.9, offset: 0.92 },
-        { transform: "translateY(" + Math.round(fall) + "px)", opacity: 0 }
-      ], { duration: 3000 + Math.random() * 3000, delay: Math.random() * 500, easing: "ease-in", fill: "forwards" });
-    }
-  }
 })();
 
 /* Messages: visitors leave a note for Scout, up to MAX_FILES photos, GIFs
