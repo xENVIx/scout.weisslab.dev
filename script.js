@@ -10,6 +10,18 @@
    settings.txt holds "slide_seconds=<n>", how long each photo shows.
 */
 
+/* The smaller copy of a photo, for showing on the page (the full file is
+   for the lightbox): url "media/<file>" becomes "thumbs/<size>/<file>",
+   size 640 (640 px wide: the gallery, memory cards) or 1600 (at most
+   1600 px a side). server/media.js makes them; a GIF or video stays as it
+   is. A copy that isn't there yet falls back to the full photo (the
+   error listener in index.html's <head>). */
+var THUMB_EXT = /\.(jpe?g|png|webp|avif)$/i;
+function smaller(url, size) {
+  var m = /^media\/([^\/?#]+)$/.exec(url);
+  return m && THUMB_EXT.test(decodeURIComponent(m[1])) ? "thumbs/" + size + "/" + m[1] : url;
+}
+
 /* How long one run through a GIF takes, in ms, from its bytes: the sum of
    its frames' delays (in 1/100 s; browsers play 0 or 1 as 10). 0 if it
    can't be read. gifLength(src) fetches the file first. */
@@ -781,13 +793,13 @@ function soundButton(v) {
       } else {
         var el = document.createElement("img");
         whenNear(stage, function () {
-          el.src = src;
+          el.src = smaller(src, 1600);
           if (item.kind === "gif") gifLength(src).then(function (ms) { if (ms) item.ms = ms * GIF_PLAYS; });
         }, i < STACK_DEPTH ? 1 : 0);
         el.alt = item.caption || "Scout";
         el.loading = i < STACK_DEPTH ? "eager" : "lazy";
         el.addEventListener("error", failed);
-        el.addEventListener("click", function () { openLightbox(el.src, false, item.caption); });
+        el.addEventListener("click", function () { openLightbox(src, false, item.caption); });
         card.appendChild(el);
       }
       var oops = document.createElement("div");
@@ -888,7 +900,7 @@ function soundButton(v) {
         b.appendChild(badge);
       } else {
         thumb = document.createElement("img");
-        whenNear(grid, function () { thumb.src = DIR + file; });
+        whenNear(grid, function () { thumb.src = smaller(DIR + encodeURIComponent(file), 640); });
         thumb.alt = caption || "Scout";
         thumb.loading = "lazy";
         thumb.addEventListener("load", function () {
@@ -1014,9 +1026,22 @@ function soundButton(v) {
       if (p && p.catch) p.catch(function () {});
       return;
     }
-    lightboxImg.src = src;
+    // The smaller copy first (often already loaded), then the full photo
+    // in its place once it's here, for zooming in.
+    var first = smaller(src, 1600);
+    lightboxImg.onload = null;
+    lightboxImg.src = first;
     if (lightboxImg.complete) measureBase();
     else lightboxImg.onload = measureBase;
+    if (first === src) return;
+    var full = new Image();
+    full.onload = function () {
+      if (lightbox.hidden || lightboxImg.getAttribute("src") !== first) return;
+      lightboxImg.onload = null; // the same shape, so the zoom carries on
+      lightboxImg.src = src;
+      if (!baseW) measureBase();
+    };
+    full.src = src;
   }
   function closeLightbox() {
     if (!lightbox || !lightboxImg) return;
@@ -1101,7 +1126,7 @@ function soundButton(v) {
   setTimeout(showHero, 3000); // whatever happens, never leave it hidden
   function differs(el, name) {
     var src = el.getAttribute("src");
-    return src !== "media/" + name && src !== "media/" + encodeURIComponent(name);
+    return [smaller("media/" + encodeURIComponent(name), 1600), "media/" + name, "media/" + encodeURIComponent(name)].indexOf(src) < 0;
   }
   fetch("media/page_files.txt", { cache: "no-cache" })
     .then(function (r) { return r.ok ? r.text() : ""; })
@@ -1114,7 +1139,7 @@ function soundButton(v) {
       if (hero && names.intro && differs(hero, names.intro)) {
         hero.addEventListener("load", showHero);
         hero.addEventListener("error", showHero);
-        hero.src = "media/" + encodeURIComponent(names.intro);
+        hero.src = smaller("media/" + encodeURIComponent(names.intro), 1600);
       } else showHero();
     })
     .catch(showHero);
@@ -1135,7 +1160,7 @@ function soundButton(v) {
       if (!memorialBlocks(t).length) return;
       renderMemorial(t, section, {
         dir: "media/",
-        setSrc: function (img, url) { whenNear(img, function () { img.src = url; }); },
+        setSrc: function (img, url) { whenNear(img, function () { img.src = smaller(url, 1600); }); },
         onPhoto: function (fig, url, caption) {
           fig.querySelector("img").addEventListener("click", function () {
             if (window.scoutLightbox) window.scoutLightbox(url, false, caption);
@@ -1266,7 +1291,7 @@ function soundButton(v) {
           if (kind(main) === "photo") {
             var img = document.createElement("img");
             img.alt = "";
-            whenNear(grid, function () { img.src = url(main); });
+            whenNear(grid, function () { img.src = smaller(url(main), 640); });
             ph.appendChild(img);
           } else still(main, ph);
           if (kind(main) === "video") ph.appendChild(badge("play"));
@@ -1346,7 +1371,7 @@ function soundButton(v) {
         s.el = document.createElement("img");
         s.el.alt = alt;
         s.el.onerror = fail;
-        s.el.src = url(f);
+        s.el.src = smaller(url(f), 1600);
         if (s.kind === "gif") gifLength(url(f)).then(function (ms) { if (ms) s.ms = Math.max(ms * GIF_PLAYS, 2000); });
         s.slide.appendChild(s.el);
       }

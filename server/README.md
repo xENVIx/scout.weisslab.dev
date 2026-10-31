@@ -38,13 +38,17 @@ After editing `messages.js`, run `systemctl restart scout-messages`.
 
 `media.js` is a second dependency-free Node server, on `127.0.0.1:3312`. It serves the admin sign-in and `/admin` (above), and `/media-admin`. Ten wrong passwords from one IP locks sign-in out for 15 minutes. From that page you can upload photos and videos into `media/` (one flat folder; one file per request, streamed to disk, 1 GB max) and rename or delete them. Each file also has "Moments" and "Gallery" checkboxes, saved to `media/slideshow.txt` (what's in the Moments section: photos, GIFs and videos; the name is from when it was the slideshow) and `media/not_in_gallery.txt`. Each GIF also has a "Transition" menu picking which section-to-section transition it plays for (`media/transitions.txt`, `<from>><to>=<file>` lines; one GIF per transition, so ones already taken are greyed out in the other menus and refused by the server), or "Random", which puts it in a pool (`random=<file>` lines) that every transition without its own GIF draws from. Renaming the intro photo or catch video updates `media/page_files.txt`, which the page reads to find them; a "Title page photo" dropdown (still photos only, with a preview cropped like the page's frame) sets `intro=` there. A "Moments timing" box sets how many seconds each photo shows in Moments (`slide_seconds=<n>` in `media/settings.txt`, default 5). A "Memories" box edits `media/memories.json` (the Memories section's stories, each with a title, text and up to 30 photos, GIFs or videos, the first shown on its card). A "Memorial text" box at the bottom edits `media/memorial.txt`, the Memorial section's text. Each file has an optional caption box (saved to `media/captions.txt` as `<file>=<caption>` lines). Files are grouped by type (images, GIFs, videos), or listed in display order with a "Slide n · Gallery n" label; the choice is remembered in a cookie. In display order, rows can be dragged by their handle (touch) or anywhere outside their boxes and buttons (mouse) or moved with the arrow keys; the order saves to `media/order.txt`, and files it doesn't name come after, by filename.
 
-It runs as the system user `scout-media`, which owns `media/` and can't write anywhere else.
+It runs as the system user `scout-media`, which owns `media/` and `thumbs/` and can't write anywhere else.
+
+It also keeps `thumbs/` (not in git) in step with `media/`: for every photo (not GIFs or videos) a copy 640 px wide in `thumbs/640/` and one at most 1600 px a side in `thumbs/1600/`, same file name, turned the right way up and without EXIF, made with `vipsthumbnail` (package `libvips-tools`) one at a time. It does this on start and a couple of seconds after anything in `media/` changes (`fs.watch`), so uploads, renames and deletes are covered; an out-of-date copy (older than its photo) is remade, and copies of photos that are gone are removed. Errors go to the journal.
 
 ## Install (run as root)
 
 ```sh
+apt-get install --no-install-recommends libvips-tools
 useradd --system --no-create-home --shell /usr/sbin/nologin scout-media
 chown -R scout-media:scout-media media
+install -d -o scout-media -g scout-media thumbs
 ( umask 077; printf 'ADMIN_PASSWORD=%s\n' "$(openssl rand -base64 15)" > /etc/scout-media.env )
 cp server/scout-media.service /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now scout-media

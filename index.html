@@ -33,6 +33,17 @@
    case script.js never runs). */
 document.documentElement.classList.add("is-loading");
 setTimeout(function () { document.documentElement.classList.remove("is-loading"); }, 4000);
+/* The page shows smaller copies of the photos, thumbs/<size>/<file>
+   (made by server/media.js; smaller() in script.js). If one isn't there
+   yet (a photo just uploaded), the full photo in media/ loads instead,
+   before the image's own error handlers hear of it. Here so it's in
+   place before any image loads. */
+document.addEventListener("error", function (e) {
+  var t = e.target, m = t && t.tagName === "IMG" && /^(?:.*\/)?thumbs\/\d+\/([^\/?#]+)$/.exec(t.getAttribute("src") || "");
+  if (!m) return;
+  e.stopImmediatePropagation();
+  t.src = "media/" + m[1];
+}, true);
 </script>
 </head>
 <body>
@@ -62,7 +73,7 @@ setTimeout(function () { document.documentElement.classList.remove("is-loading")
       <h1>Scout</h1>
     </div>
     <div class="frame">
-      <img src="media/02_my_scouty_boy.jpg" alt="Scout holding a stick" />
+      <img src="thumbs/1600/02_my_scouty_boy.jpg" alt="Scout holding a stick" />
     </div>
   </header>
 </div>

@@ -43,6 +43,7 @@ var http = require("http");
 var fs = require("fs");
 var path = require("path");
 var crypto = require("crypto");
+var execFile = require("child_process").execFile;
 
 var PORT = Number(process.env.PORT) || 3312;
 var HOST = "127.0.0.1";
@@ -55,6 +56,16 @@ var MESSAGES_PORT = Number(process.env.MESSAGES_PORT) || 3311;
 // Where signing in can send you on to.
 var ADMIN_PAGES = ["/admin", "/media-admin", "/messages-admin"];
 var MEDIA_ROOT = process.env.MEDIA_ROOT || path.join(__dirname, "..", "media");
+// Smaller copies of the photos for the page (thumbs/<size>/<file>, the same
+// name), made with vipsthumbnail (libvips-tools), turned the right way up
+// and without their EXIF; the page shows these and loads the full file
+// only in the lightbox. "640" is 640 px wide (the gallery, memory cards),
+// "1600x1600" at most 1600 px a side (Moments, the memorial, the memory
+// reader, the title page), never bigger than the photo. GIFs and videos
+// aren't copied.
+var THUMBS_ROOT = process.env.THUMBS_ROOT || path.join(__dirname, "..", "thumbs");
+var THUMB_SIZES = { "640": "640x>", "1600": "1600x1600>" }; // ">": only ever smaller
+var VIPSTHUMBNAIL = "/usr/bin/vipsthumbnail";
 
 var MAX_UPLOAD = 1024 * 1024 * 1024; // 1 GB per file
 var MAX_FORM = 2 * 1024 * 1024; // the memories editor sends all of them at once
@@ -332,6 +343,64 @@ function forgetFile(file, renamedTo) {
   // A deleted photo's tag goes, and the space or blank lines it leaves.
   if (tagged && !renamedTo) next = next.replace(/[ \t]{2,}/g, " ").replace(/ +\n/g, "\n").replace(/\n\s*\n(\s*\n)+/g, "\n\n").trim() + "\n";
   if (tagged) writeFile(MEMORIAL_FILE, next);
+}
+
+// ---- smaller copies (THUMBS_ROOT) ----
+
+// Brings thumbs/ in line with media/: makes the copies a photo is missing
+// (or that are older than it), one at a time, and removes those whose
+// photo is gone. Runs on start and whenever media/ changes (renames,
+// uploads and deletes included), a moment after it settles.
+var thumbsBusy = false, thumbsAgain = false, thumbsTimer = null;
+function syncThumbs() {
+  if (thumbsBusy) { thumbsAgain = true; return; }
+  thumbsBusy = true;
+  var jobs = [];
+  var photos = {};
+  try {
+    fs.readdirSync(MEDIA_ROOT, { withFileTypes: true }).forEach(function (d) {
+      if (d.isFile() && d.name.charAt(0) !== "." && PHOTO_EXT.test(d.name)) photos[d.name] = fs.statSync(filePath(d.name)).mtimeMs;
+    });
+    Object.keys(THUMB_SIZES).forEach(function (size) {
+      var dir = path.join(THUMBS_ROOT, size);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.readdirSync(dir).forEach(function (name) {
+        if (!photos[name]) fs.rmSync(path.join(dir, name), { force: true });
+      });
+      Object.keys(photos).forEach(function (name) {
+        var st = null;
+        try { st = fs.statSync(path.join(dir, name)); } catch (e) {}
+        if (!st || st.mtimeMs < photos[name]) jobs.push([name, size]);
+      });
+    });
+  } catch (e) { console.error("thumbs:", e.message); }
+  (function next() {
+    var job = jobs.shift();
+    if (!job) {
+      thumbsBusy = false;
+      if (thumbsAgain) { thumbsAgain = false; syncThumbs(); }
+      return;
+    }
+    // Written beside it under a temporary name, then moved into place, so
+    // the page never gets half a file. vipsthumbnail writes the output
+    // relative to the input's folder, so it gets an absolute path.
+    var out = path.join(THUMBS_ROOT, job[1], job[0]), tmp = path.join(THUMBS_ROOT, job[1], ".tmp-" + job[0]);
+    var opts = /\.png$/i.test(job[0]) ? "[strip]" : "[Q=82,strip,optimize_coding]";
+    execFile(VIPSTHUMBNAIL, [filePath(job[0]), "--size", THUMB_SIZES[job[1]], "-o", tmp + opts], { timeout: 120e3 }, function (err) {
+      if (err) { console.error("thumbs: " + job[0] + ": " + err.message.split("\n")[0]); fs.rmSync(tmp, { force: true }); }
+      else { try { fs.renameSync(tmp, out); } catch (e) { console.error("thumbs:", e.message); } }
+      next();
+    });
+  })();
+}
+function watchThumbs() {
+  syncThumbs();
+  try {
+    fs.watch(MEDIA_ROOT, function () {
+      clearTimeout(thumbsTimer);
+      thumbsTimer = setTimeout(syncThumbs, 2000);
+    });
+  } catch (e) { console.error("thumbs: can't watch " + MEDIA_ROOT + ": " + e.message); }
 }
 
 // ---- helpers ----
@@ -1638,5 +1707,6 @@ http.createServer(function (req, res) {
   action(req, res);
 }).listen(PORT, HOST, function () {
   migrate();
+  watchThumbs();
   console.log("scout-media listening on " + HOST + ":" + PORT + ", managing " + MEDIA_ROOT);
 });
