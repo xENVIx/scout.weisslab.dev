@@ -593,6 +593,16 @@ function saveJSON(file, data) {
 
 var viewers = loadJSON(VIEWERS_FILE, []); // [{ email, name, addedAt, lastSignIn }]
 var links = loadJSON(LINKS_FILE, {});     // sha256(token) hex -> { email, exp }
+// Requests for access waiting for the owner at /admin/people: approving one
+// adds them and emails them that they're in, with a link; denying drops it.
+var REQUESTS_FILE = path.join(STATE_DIR, "requests.json");
+var MAX_REQUESTS = 200;
+var requests = loadJSON(REQUESTS_FILE, []); // [{ email, name, at }]
+function dropRequest(email) {
+  var n = requests.length;
+  requests = requests.filter(function (r) { return r.email !== email; });
+  if (requests.length !== n) saveJSON(REQUESTS_FILE, requests);
+}
 
 function normEmail(e) {
   e = String(e || "").trim().toLowerCase();
@@ -676,15 +686,21 @@ function linkFor(token) {
   return l && l.exp >= Date.now() && viewer(l.email) ? { hash: h, email: l.email } : null;
 }
 
-function sendLink(email, host, invite, cb) {
+// kind: "link" (asked for at Sign in), "invite" (the owner added them) or
+// "approved" (the owner approved their request).
+function sendLink(email, host, kind, cb) {
+  var invite = kind !== "link";
   var url = newLink(email, invite ? INVITE_MS : LINK_MS, host);
   var v = viewer(email), hi = v && v.name ? "Hi " + v.name + ",\n\n" : "";
-  var text = invite
+  var text = kind === "approved"
+    ? hi + "Your request to see all of Scout's memorial page has been approved, so his memories, photos and videos are open to you now. Open this link to sign in:\n\n" + url +
+      "\n\nIt works once, within 14 days. After that you can get a new one any time with Sign in and this email address, at https://" + host + "/#more"
+    : invite
     ? hi + "You've been invited to see all of Scout's memorial page: his memories, photos and videos. Open this link to sign in:\n\n" + url +
       "\n\nIt works once, within 14 days. After that you can get a new one any time with this email address, at https://" + host + "/#more"
     : hi + "Here's your link to see all of Scout's page, his memories, photos and videos:\n\n" + url +
       "\n\nIt works once, within 2 hours. If you didn't ask for it, you can ignore this email.";
-  sendMail(email, invite ? "You're invited to Scout's page" : "Your link to Scout's page", text, function (err) {
+  sendMail(email, kind === "approved" ? "You can now see Scout's page" : invite ? "You're invited to Scout's page" : "Your link to Scout's page", text, function (err) {
     if (err) console.error("couldn't email a sign-in link to " + email + ": " + err.message);
     if (cb) cb(err);
   });
@@ -700,18 +716,21 @@ function requestLink(req, res) {
     // The same answer whether or not the email is listed, so the page never
     // says who's on the list.
     json(res, 200, { ok: true, message: request
-      ? "Thank you, your request has been sent to Scout’s family. (If you were already invited, a sign-in link is on its way instead.)"
+      ? "Thank you, your request has been sent to Scout’s family. You’ll get an email with a link once it’s approved. (If you were already invited, a sign-in link is on its way instead.)"
       : "If that email has been invited, a sign-in link is on its way (check your spam folder too). Not invited yet? Request access instead." });
-    if (viewer(email)) { if (!tooMany("email:" + email, 3)) sendLink(email, siteHost(req), false); return; }
+    if (viewer(email)) { if (!tooMany("email:" + email, 3)) sendLink(email, siteHost(req), "link"); return; }
     if (!request) return;
     var name = String(f.name || "").replace(/\s+/g, " ").trim().slice(0, 80);
+    var r = requests.filter(function (x) { return x.email === email; })[0];
+    if (r) { if (name) r.name = name; }
+    else if (requests.length < MAX_REQUESTS) requests.push(r = { email: email, name: name, at: new Date().toISOString() });
+    else return;
+    saveJSON(REQUESTS_FILE, requests);
     if (!NOTIFY_EMAIL || Date.now() - (asked.get(email) || 0) < ASK_EVERY_MS) return;
     asked.set(email, Date.now());
-    var host = siteHost(req);
     sendMail(NOTIFY_EMAIL, "Someone asked to see Scout's page", (name ? name + " (" + email + ")" : email) +
-      " asked to see all of Scout's page (Memories, Moments and the Gallery), and isn't on your list.\n\nTo let them in, add them here (it emails them an invitation):\n\n" +
-      "https://" + host + "/admin/people?add=" + encodeURIComponent(email) + (name ? "&name=" + encodeURIComponent(name) : "") +
-      "\n\nIf you don't know them, just ignore this.", function (err) {
+      " asked to see all of Scout's page (Memories, Moments and the Gallery).\n\nApprove or deny it here:\n\n" +
+      "https://" + siteHost(req) + "/admin/people", function (err) {
       if (err) console.error("couldn't email " + NOTIFY_EMAIL + " about " + email + ": " + err.message);
     });
   });
@@ -770,6 +789,13 @@ function peoplePage(res, msg, error, add) {
     '<p><a href="/admin">← Admin</a></p><h1>Invited people</h1>' +
     '<p class="hint">Everyone can see the first page, the Memorial and Messages. Memories, Moments and the Gallery are only for the emails here: they sign in with a link emailed to them (they can ask for one on the page any time) and stay signed in on that device for a year. Removing someone locks them out right away.</p>' +
     (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') + (error ? '<p class="err">' + esc(error) + '</p>' : '') +
+    (requests.length ? '<h2 style="font-weight:400">Waiting for you (' + requests.length + ')</h2><p class="hint">Approving adds them and emails them that they can see the page now, with a link to sign in. Denying just takes the request away; they aren\'t told.</p>' +
+      '<table><tr><th>Who</th><th>Asked</th><th></th></tr>' + requests.map(function (r) {
+        var hidden = '<input type="hidden" name="email" value="' + esc(r.email) + '">';
+        return '<tr><td>' + esc(r.name || "") + (r.name ? '<br>' : '') + '<span class="when">' + esc(r.email) + '</span></td><td class="when">' + when(r.at) + '</td><td>' +
+          '<form method="post" action="/admin/people"><input type="hidden" name="op" value="approve">' + hidden + '<button class="quiet">Approve</button></form> ' +
+          '<form method="post" action="/admin/people"><input type="hidden" name="op" value="deny">' + hidden + '<button class="quiet">Deny</button></form></td></tr>';
+      }).join("") + '</table><h2 style="font-weight:400">On the list</h2>' : '') +
     (rows ? '<table><tr><th>Who</th><th>Last signed in</th><th></th></tr>' + rows + '</table>' : '<p class="hint"><i>Nobody yet.</i></p>') +
     '<h2 style="font-weight:400">Add someone</h2><form method="post" action="/admin/people"><input type="hidden" name="op" value="add">' +
     '<label for="em">Email</label><input id="em" name="email" type="email" required maxlength="200" autocomplete="off" value="' + esc(normEmail(add.email)) + '"' + (add.email ? ' autofocus' : '') + '>' +
@@ -782,6 +808,20 @@ function changePeople(req, res) {
   readForm(req, function (f) {
     var email = normEmail(f.email), done = function (msg) { send(res, 303, "", { Location: "/admin/people?msg=" + encodeURIComponent(msg) }); };
     if (!email) return peoplePage(res, "", "That doesn't look like an email address.");
+    if (f.op === "approve" || f.op === "deny") {
+      var r = requests.filter(function (x) { return x.email === email; })[0];
+      if (!r) return done("That request was already dealt with.");
+      dropRequest(email);
+      if (f.op === "deny") return done("Denied " + email + "'s request.");
+      if (!viewer(email)) {
+        if (viewers.length >= MAX_VIEWERS) return peoplePage(res, "", "That's " + MAX_VIEWERS + " people, the most the list holds.");
+        viewers.push({ email: email, name: r.name || "", addedAt: new Date().toISOString(), lastSignIn: "" });
+        saveJSON(VIEWERS_FILE, viewers);
+      }
+      return sendLink(email, siteHost(req), "approved", function (err) {
+        done(err ? "Approved " + email + ", but the email couldn't be sent (" + err.message + "). Try Send link." : "Approved " + email + " and emailed them that they're in.");
+      });
+    }
     if (f.op === "add") {
       var v = viewer(email), name = String(f.name || "").replace(/\s+/g, " ").trim().slice(0, 80);
       if (!v) {
@@ -789,14 +829,15 @@ function changePeople(req, res) {
         viewers.push(v = { email: email, name: name, addedAt: new Date().toISOString(), lastSignIn: "" });
       } else if (name) v.name = name;
       saveJSON(VIEWERS_FILE, viewers);
+      dropRequest(email);
       if (!f.invite) return done("Added " + email + ".");
-      return sendLink(email, siteHost(req), true, function (err) {
+      return sendLink(email, siteHost(req), "invite", function (err) {
         done(err ? "Added " + email + ", but the invitation couldn't be sent (" + err.message + ")." : "Added " + email + " and emailed them an invitation.");
       });
     }
     if (!viewer(email)) return peoplePage(res, "", email + " isn't on the list.");
     if (f.op === "invite") {
-      return sendLink(email, siteHost(req), true, function (err) {
+      return sendLink(email, siteHost(req), "invite", function (err) {
         done(err ? "Couldn't email " + email + " (" + err.message + ")." : "Emailed " + email + " a new sign-in link.");
       });
     }
@@ -1120,7 +1161,7 @@ function hubPage(res, msg) {
       card("/media-admin#slideshow", "Moments timing", "How long each photo shows in Moments.") +
       '</div>' +
       '<h2>Who can see it</h2>' +
-      card("/admin/people", "Invited people", "The emails that can see Memories, Moments and the Gallery (" + viewers.length + (viewers.length === 1 ? " person" : " people") + "). Everyone can see the first page, the Memorial and Messages.") +
+      card("/admin/people", "Invited people", (requests.length ? requests.length + " asking to see the page. " : "") + "The emails that can see Memories, Moments and the Gallery (" + viewers.length + (viewers.length === 1 ? " person" : " people") + "). Everyone can see the first page, the Memorial and Messages.", requests.length || "") +
       '<h2>You</h2>' +
       card("/admin/password", "Change password", "Set your own password for signing in to these pages.") +
       '</main></body></html>';
