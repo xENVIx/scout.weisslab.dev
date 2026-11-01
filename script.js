@@ -55,6 +55,71 @@ function gifLength(src) {
    so a clip that's needed next never shares the connection. */
 var clipQueue = Promise.resolve();
 
+/* Guests: the first page, the Memorial and Messages are for everyone; the
+   rest (Memories, Moments, the Gallery) only for the people the owner has
+   invited by email (/admin/people), who sign in with a link emailed to them
+   (server/media.js, /access/...). nginx asks server/media.js before serving
+   anything in media/ or thumbs/ (auth_request), and lets a guest have only
+   what the public parts use. Signing in sets scout_in=1 next to the real
+   (HttpOnly) cookie, so the page can tell straight away: without it those
+   scenes are hidden (kept in the page, not .scene, so the lightbox etc.
+   still find their elements) and a "More of Scout" scene asks for an email
+   instead. If the media turns out to be locked anyway (signed out, or taken
+   off the list), lockedOut() drops scout_in and reloads as a guest. */
+var GUEST = !/(?:^|;\s*)scout_in=1(?:;|$)/.test(document.cookie);
+var LOCKED = ["memories", "moments", "gallery"];
+function lockedOut() {
+  if (GUEST) return;
+  document.cookie = "scout_in=; Path=/; Max-Age=0; Secure; SameSite=Lax";
+  location.reload();
+}
+(function guestPage() {
+  if (!GUEST) return;
+  LOCKED.forEach(function (a) {
+    var sc = document.querySelector('.scene[data-anchor="' + a + '"]');
+    if (sc) { sc.classList.remove("scene"); sc.hidden = true; }
+    Array.prototype.forEach.call(document.querySelectorAll('.sidenav a[href="#' + a + '"], .topnav a[href="#' + a + '"]'), function (l) {
+      l.parentNode.removeChild(l);
+    });
+  });
+  var before = document.querySelector('.scene[data-anchor="messages"]');
+  if (!before) return;
+  if (LOCKED.indexOf(location.hash.slice(1)) >= 0) history.replaceState(null, "", "#more");
+  var scene = document.createElement("div");
+  scene.className = "scene";
+  scene.setAttribute("data-anchor", "more");
+  scene.innerHTML =
+    '<section class="narrow section access" id="more">' +
+    '<div class="head"><h2>More of Scout</h2></div>' +
+    '<p>Scout’s memories, photos and videos are kept for family and friends. If you’ve been invited, enter your email and you’ll get a link to sign in.</p>' +
+    '<form class="access-form" id="access-form">' +
+    '<label class="sr-only" for="access-email">Your email</label>' +
+    '<input type="email" id="access-email" name="email" required maxlength="200" autocomplete="email" placeholder="Your email" />' +
+    '<div class="message-actions"><button type="submit" class="message-send">Send me a link</button>' +
+    '<p class="message-status" id="access-status" aria-live="polite"></p></div>' +
+    '</form></section>';
+  before.parentNode.insertBefore(scene, before);
+  ["sidenav", "topnav"].forEach(function (id) {
+    var nav = document.getElementById(id), msgs = nav && nav.querySelector('a[href="#messages"]');
+    if (!msgs) return;
+    var a = document.createElement("a");
+    a.href = "#more";
+    a.textContent = "Sign in";
+    nav.insertBefore(a, msgs);
+  });
+  var form = scene.querySelector("form"), status = scene.querySelector("#access-status"), btn = form.querySelector("button");
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    btn.disabled = true;
+    status.textContent = "Sending…";
+    fetch("/access/request", { method: "POST", body: new URLSearchParams({ email: form.email.value.trim() }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error); return j; }); })
+      .then(function (j) { status.textContent = j.message; form.email.value = ""; },
+        function (err) { status.textContent = (err && err.message) || "Sorry, that didn’t work. Please try again."; })
+      .then(function () { btn.disabled = false; });
+  });
+})();
+
 /* Scenes: the page is full-screen .scene layers (intro, dedication,
    slideshow, moments, gallery, messages) and scrolling fades between them instead of moving
    the page. A scene taller than the screen scrolls normally inside itself
@@ -708,7 +773,7 @@ function soundButton(v) {
   // GIFs and videos, from before Moments and the slideshow were one (the
   // media manager merges it into slideshow.txt).
   var notInGallery = {}, inSlideshow = {}, order = [], captions = {};
-  Promise.all([fetchLines("not_in_gallery.txt"), fetchLines("slideshow.txt"), fetchLines("order.txt"), fetchLines("captions.txt"), fetchLines("settings.txt"), fetchLines("moments.txt")])
+  if (!GUEST) Promise.all([fetchLines("not_in_gallery.txt"), fetchLines("slideshow.txt"), fetchLines("order.txt"), fetchLines("captions.txt"), fetchLines("settings.txt"), fetchLines("moments.txt")])
     .then(function (lists) {
       notInGallery = toSet(lists[0]);
       inSlideshow = toSet(lists[1].concat(lists[5]));
@@ -723,7 +788,10 @@ function soundButton(v) {
       });
       return fetch(DIR, { cache: "no-cache" });
     })
-    .then(function (r) { return r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status)); })
+    .then(function (r) {
+      if (r.status === 401) lockedOut();
+      return r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status));
+    })
     .then(function (html) {
       var doc = new DOMParser().parseFromString(html, "text/html");
       var files = Array.prototype.slice.call(doc.querySelectorAll("a"))
@@ -1191,7 +1259,7 @@ function soundButton(v) {
   var DIR = "media/", VIDEO_RE = /\.(mp4|webm|mov|m4v)$/i, GIF_RE = /\.gif$/i;
   var SLIDE_MS = 5000, GIF_PLAYS = 2, FALLBACK_MS = 5000;
   var grid = document.getElementById("memory-grid"), view = document.getElementById("memory-view");
-  if (!grid || !view) return;
+  if (!grid || !view || GUEST) return;
   var photoBox = document.getElementById("mv-photo"), titleEl = document.getElementById("mv-title");
   var textEl = document.getElementById("mv-text"), countEl = document.getElementById("mv-count");
   var prevBtn = document.getElementById("mv-prev"), nextBtn = document.getElementById("mv-next"), closeBtn = document.getElementById("mv-close");

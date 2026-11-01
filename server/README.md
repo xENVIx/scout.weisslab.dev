@@ -55,3 +55,7 @@ systemctl daemon-reload && systemctl enable --now scout-media
 ```
 
 The nginx rule is in `nginx-site.conf`. After editing `media.js`, run `systemctl restart scout-media`.
+
+## Invited people (who can see Memories, Moments and the Gallery)
+
+`media.js` also decides who gets the files in `media/` and `thumbs/`: `server/nginx-site.conf` sends every request there through `auth_request /_scout_auth` (→ `127.0.0.1:3312/internal/auth`) and proxies `/access/` (the emailed sign-in links) to it. The first page, the Memorial and Messages stay public. The owner adds and removes emails at `/admin/people`; the list is `/var/lib/scout-media/viewers.json`, pending links `signin-links.json`. Links are emailed through Postfix from `NOTIFY_FROM` (in `/etc/scout-media.env`; it needs the same SPF setup as the messages' email). Optional: `SITE_HOSTS` (comma-separated) lists the domains a link may point at.

@@ -378,17 +378,22 @@ html.is-loading body > * { visibility: hidden !important; }
   font-family: var(--sans); font-size: 14px; color: var(--ink-mute);
 }
 
+/* ---- "More of Scout": the sign-in for guests, in place of Memories,
+   Moments and the Gallery (guestPage() in script.js) ---- */
+.access p { max-width: 34em; }
+.access .access-form input { max-width: 420px; margin-top: 0; }
+
 /* ---- messages (form + approved list; backend in server/messages.js) ---- */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .message-form .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
-.message-form textarea, .message-form #message-name {
+.message-form textarea, .message-form #message-name, .access-form input {
   display: block; width: 100%; resize: vertical; min-height: 120px;
   padding: 14px 16px; border: 1px solid var(--edge); border-radius: 3px;
   background: #FFFDF8; color: var(--ink);
   font: 300 clamp(17px, 1.9vw, 19px)/1.6 var(--serif);
 }
-.message-form #message-name { min-height: 0; margin-top: 10px; padding: 10px 16px; font-size: clamp(16px, 1.7vw, 17px); }
-.message-form textarea:focus, .message-form #message-name:focus { outline: 2px solid rgba(168,87,31,.35); outline-offset: 1px; border-color: var(--accent); }
+.message-form #message-name, .access-form input { min-height: 0; margin-top: 10px; padding: 10px 16px; font-size: clamp(16px, 1.7vw, 17px); }
+.message-form textarea:focus, .message-form #message-name:focus, .access-form input:focus { outline: 2px solid rgba(168,87,31,.35); outline-offset: 1px; border-color: var(--accent); }
 /* "Add photos or videos": the file input sits invisibly over its label;
    script.js shows each picked file in .attach-list with a remove button. */
 .message-photo { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 12px; }

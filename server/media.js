@@ -522,7 +522,7 @@ function login(req, res) {
     var pass = String(f.password || "").trim();
     if (checkPassword(pass)) {
       failures.delete(ip);
-      return send(res, 303, "", { Location: nextPage(f.next), "Set-Cookie": sessionCookie() });
+      return send(res, 303, "", { Location: nextPage(f.next), "Set-Cookie": [sessionCookie(), HINT_COOKIE + SESSION_MS / 1000] });
     }
     list.push(now);
     failures.set(ip, list);
@@ -544,6 +544,281 @@ function loginPage(res, error, next) {
     '<input id="pw" name="password" type="password" autocomplete="current-password" autofocus required>' +
     '<button>Sign in</button></form></main></body></html>';
   send(res, error ? 401 : 200, html, { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" });
+}
+
+// ---- who can see the whole page ----
+//
+// The first page, the Memorial and Messages are public. Memories, Moments
+// and the Gallery are for the people the owner invites by email at
+// /admin/people (viewers.json in the state dir). They ask for a link on the
+// page (/access/request), get it by email (single use; LINK_MS, or
+// INVITE_MS when the owner sends it), and opening it (a button on
+// /access/verify, so a mail scanner fetching the link doesn't use it up)
+// sets scout_viewer (HttpOnly; "<expiry>.<email, base64url>.<hmac>") and
+// scout_in=1 (for script.js to read). Taking someone off the list locks
+// them out at once: the cookie is only good while its email is listed.
+// nginx asks /internal/auth before serving anything in media/ or thumbs/
+// (auth_request); a guest gets only what the public parts use
+// (publicFiles()). The admin cookie counts as a viewer too.
+
+var STATE_DIR = process.env.STATE_DIRECTORY || path.join(__dirname, "data");
+var VIEWERS_FILE = path.join(STATE_DIR, "viewers.json");
+var LINKS_FILE = path.join(STATE_DIR, "signin-links.json");
+var VIEWER_MS = 365 * 24 * 60 * 60e3; // signed in for a year
+var LINK_MS = 2 * 60 * 60e3;          // a link someone asked for: 2 hours
+var INVITE_MS = 14 * 24 * 60 * 60e3;  // an invitation the owner sent: 14 days
+var MAX_VIEWERS = 500;
+var NOTIFY_FROM = process.env.NOTIFY_FROM || "scout@inlovingmemoryofscout.com";
+// The domains a sign-in link may point at (it's built from the request's
+// Host, so a made-up Host can't send someone's link elsewhere).
+var SITE_HOSTS = (process.env.SITE_HOSTS || "inlovingmemoryofscout.com,www.inlovingmemoryofscout.com,scout.weisslab.dev").split(",").map(function (h) { return h.trim(); }).filter(Boolean);
+// The media lists the public parts read.
+var PUBLIC_DATA = [MEMORIAL_FILE, PAGE_LIST, TRANSITIONS_FILE, SETTINGS_FILE];
+
+function loadJSON(file, empty) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
+  catch (e) { if (e.code !== "ENOENT") console.error(e); return empty; }
+}
+function saveJSON(file, data) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  var tmp = file + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 1), { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
+var viewers = loadJSON(VIEWERS_FILE, []); // [{ email, name, addedAt, lastSignIn }]
+var links = loadJSON(LINKS_FILE, {});     // sha256(token) hex -> { email, exp }
+
+function normEmail(e) {
+  e = String(e || "").trim().toLowerCase();
+  return e.length <= 200 && /^[^\s@<>()",;:]+@[^\s@<>()",;:]+\.[^\s@<>()",;:]+$/.test(e) ? e : "";
+}
+function viewer(email) { return viewers.filter(function (v) { return v.email === email; })[0] || null; }
+function siteHost(req) { var h = String(req.headers.host || "").toLowerCase(); return SITE_HOSTS.indexOf(h) >= 0 ? h : SITE_HOSTS[0]; }
+
+function viewerSig(exp, email) { return crypto.createHmac("sha256", SESSION_SECRET).update("viewer." + exp + "." + email).digest("hex"); }
+var HINT_COOKIE = "scout_in=1; Path=/; Secure; SameSite=Lax; Max-Age=";
+function viewerCookies(email) {
+  var exp = Date.now() + VIEWER_MS;
+  return ["scout_viewer=" + exp + "." + Buffer.from(email).toString("base64url") + "." + viewerSig(exp, email) +
+    "; Path=/; Max-Age=" + VIEWER_MS / 1000 + "; HttpOnly; Secure; SameSite=Lax", HINT_COOKIE + VIEWER_MS / 1000];
+}
+// The signed-in viewer's email, while it's still on the list; or null.
+function viewerOf(req) {
+  if (!SESSION_SECRET) return null;
+  var m = /(?:^|;\s*)scout_viewer=(\d+)\.([A-Za-z0-9_-]+)\.([0-9a-f]{64})/.exec(req.headers.cookie || "");
+  if (!m || Number(m[1]) < Date.now()) return null;
+  var email = Buffer.from(m[2], "base64url").toString("utf8");
+  if (!crypto.timingSafeEqual(Buffer.from(m[3], "hex"), Buffer.from(viewerSig(m[1], email), "hex"))) return null;
+  return viewer(email) ? email : null;
+}
+
+// What a guest may have from media/ (and thumbs/): the lists above, the
+// title page photo, the memorial's photos, and the transition GIFs the
+// public scenes can play (first page > Memorial, and the Random pool).
+var publicCache = null, publicAt = 0;
+function publicFiles() {
+  if (publicCache && Date.now() - publicAt < 2000) return publicCache;
+  var set = {};
+  PUBLIC_DATA.forEach(function (f) { set[f] = true; });
+  var roles = pageFiles();
+  Object.keys(roles).forEach(function (r) { set[roles[r]] = true; });
+  var text = "";
+  try { text = fs.readFileSync(filePath(MEMORIAL_FILE), "utf8"); } catch (e) {}
+  var re = new RegExp(MEMORIAL_TAG.source, "gi"), m;
+  while ((m = re.exec(text))) set[m[2]] = true;
+  var t = readTransitions();
+  if (t["top>dedication"]) set[t["top>dedication"]] = true;
+  t.random.forEach(function (f) { set[f] = true; });
+  publicCache = set;
+  publicAt = Date.now();
+  return set;
+}
+
+// nginx's auth_request: 204 serves the file, 401 doesn't.
+function authCheck(req, res) {
+  if (isAdmin(req) || viewerOf(req)) return send(res, 204, "");
+  // The request's URI as the visitor sent it ($request_uri: still encoded,
+  // with any query); anything that isn't plainly one file is no.
+  var m = /^\/(?:media|thumbs\/\d+)\/([^\/?#]+)(?:\?.*)?$/.exec(String(req.headers["x-original-uri"] || "")), name = "";
+  try { name = m ? decodeURIComponent(m[1]) : ""; } catch (e) {}
+  send(res, name && !/[\/\\]/.test(name) && publicFiles()[name] ? 204 : 401, "");
+}
+
+var tries = new Map(); // "ip:<ip>" or "email:<email>" -> [timestamps]
+// Counts one more try; true when that's over max in 15 minutes.
+function tooMany(key, max) {
+  var now = Date.now();
+  var list = (tries.get(key) || []).filter(function (t) { return now - t < LOGIN_WINDOW_MS; });
+  list.push(now);
+  tries.set(key, list);
+  return list.length > max;
+}
+
+function pruneLinks() {
+  var now = Date.now();
+  Object.keys(links).forEach(function (h) { if (links[h].exp < now || !viewer(links[h].email)) delete links[h]; });
+}
+function newLink(email, ms, host) {
+  var token = crypto.randomBytes(32).toString("base64url");
+  pruneLinks();
+  links[sha(token).toString("hex")] = { email: email, exp: Date.now() + ms };
+  saveJSON(LINKS_FILE, links);
+  return "https://" + host + "/access/verify?t=" + token;
+}
+function linkFor(token) {
+  var h = sha(String(token || "")).toString("hex"), l = links[h];
+  return l && l.exp >= Date.now() && viewer(l.email) ? { hash: h, email: l.email } : null;
+}
+
+function sendLink(email, host, invite, cb) {
+  var url = newLink(email, invite ? INVITE_MS : LINK_MS, host);
+  var v = viewer(email), hi = v && v.name ? "Hi " + v.name + ",\n\n" : "";
+  var text = invite
+    ? hi + "You've been invited to see all of Scout's memorial page: his memories, photos and videos. Open this link to sign in:\n\n" + url +
+      "\n\nIt works once, within 14 days. After that you can get a new one any time with this email address, at https://" + host + "/#more"
+    : hi + "Here's your link to see all of Scout's page, his memories, photos and videos:\n\n" + url +
+      "\n\nIt works once, within 2 hours. If you didn't ask for it, you can ignore this email.";
+  sendMail(email, invite ? "You're invited to Scout's page" : "Your link to Scout's page", text, function (err) {
+    if (err) console.error("couldn't email a sign-in link to " + email + ": " + err.message);
+    if (cb) cb(err);
+  });
+}
+
+function requestLink(req, res) {
+  var ip = req.headers["x-real-ip"] || req.socket.remoteAddress || "";
+  readForm(req, function (f) {
+    var email = normEmail(f.email);
+    if (!email) return json(res, 400, { error: "That doesn't look like an email address." });
+    if (tooMany("ip:" + ip, 8)) return json(res, 429, { error: "Too many tries. Please wait a little while and try again." });
+    json(res, 200, { ok: true, message: "If that email is on Scout’s list, a sign-in link is on its way. It can take a minute; check your spam folder too." });
+    if (viewer(email) && !tooMany("email:" + email, 3)) sendLink(email, siteHost(req), false);
+  });
+}
+
+function smallPage(res, status, title, body, headers) {
+  var html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<meta name="robots" content="noindex"><title>' + esc(title) + '</title><style>' +
+    'body{margin:0;padding:24px 20px 60px;background:#FAF4EA;color:#2B211B;font:16px/1.6 Georgia,serif}' +
+    'main{max-width:560px;margin:10vh auto 0}h1{font-weight:400}p,li,td,th{font-family:system-ui,sans-serif;font-size:15px}' +
+    'label{display:block;font:600 13px system-ui,sans-serif;margin-bottom:6px}' +
+    'input[type=email],input[type=text]{box-sizing:border-box;width:100%;font:16px system-ui,sans-serif;padding:10px 12px;border:1px solid #DBC8AE;border-radius:4px;background:#FFFDF8;margin-bottom:14px}' +
+    'button{font:600 15px system-ui,sans-serif;padding:10px 20px;border-radius:999px;border:1px solid #A8571F;background:#A8571F;color:#FFF8EC;cursor:pointer}' +
+    'button.quiet{font-size:13px;padding:5px 12px;background:#FAF4EA;color:#2B211B;border-color:#DBC8AE}' +
+    '.hint{color:#6B5748}.err{color:#9b2c2c}.msg{background:#FFF1D6;border:1px solid #E8C98F;border-radius:4px;padding:10px 14px}' +
+    'table{width:100%;border-collapse:collapse;margin:8px 0 28px}td,th{text-align:left;padding:8px 6px;border-bottom:1px solid #E5D6C0;vertical-align:middle}' +
+    'th{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:#8F4818}td form{display:inline}.when{color:#6B5748;font-size:13px}' +
+    '.check{display:flex;gap:8px;align-items:center;font-weight:400;font-size:14px;margin:-4px 0 16px}' +
+    '</style></head><body><main>' + body + '</main></body></html>';
+  send(res, status, html, Object.assign({ "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer" }, headers || {}));
+}
+
+function verifyPage(req, res, token) {
+  if (!linkFor(token)) {
+    return smallPage(res, 400, "Scout’s page", '<h1>This link has run out</h1><p>It was already used, or it’s too old. You can get a new one with your email on <a href="/#more">Scout’s page</a>.</p>');
+  }
+  smallPage(res, 200, "Scout’s page", '<h1>Scout’s page</h1><p>Welcome. Press the button to see all of Scout’s page on this device.</p>' +
+    '<form method="post" action="/access/verify"><input type="hidden" name="t" value="' + esc(token) + '"><button>See Scout’s page</button></form>');
+}
+
+function verify(req, res) {
+  readForm(req, function (f) {
+    var l = linkFor(f.t);
+    if (!l) return verifyPage(req, res, "");
+    delete links[l.hash];
+    pruneLinks();
+    saveJSON(LINKS_FILE, links);
+    viewer(l.email).lastSignIn = new Date().toISOString();
+    saveJSON(VIEWERS_FILE, viewers);
+    send(res, 303, "", { Location: "/#memories", "Set-Cookie": viewerCookies(l.email) });
+  });
+}
+
+function when(iso) { return iso ? new Date(iso).toISOString().slice(0, 10) : "never"; }
+
+function peoplePage(res, msg, error) {
+  var rows = viewers.slice().sort(function (a, b) { return a.email < b.email ? -1 : 1; }).map(function (v) {
+    return '<tr><td>' + esc(v.name || "") + (v.name ? '<br>' : '') + '<span class="when">' + esc(v.email) + '</span></td>' +
+      '<td class="when">' + when(v.lastSignIn) + '</td><td>' +
+      '<form method="post" action="/admin/people"><input type="hidden" name="op" value="invite"><input type="hidden" name="email" value="' + esc(v.email) + '"><button class="quiet" title="Email them a new sign-in link">Send link</button></form> ' +
+      '<form method="post" action="/admin/people" onsubmit="return confirm(\'Take ' + esc(v.email) + ' off the list? They won’t be able to see Memories, Moments or the Gallery any more.\')"><input type="hidden" name="op" value="remove"><input type="hidden" name="email" value="' + esc(v.email) + '"><button class="quiet">Remove</button></form>' +
+      '</td></tr>';
+  }).join("");
+  smallPage(res, error ? 400 : 200, "Scout admin – invited people",
+    '<p><a href="/admin">← Admin</a></p><h1>Invited people</h1>' +
+    '<p class="hint">Everyone can see the first page, the Memorial and Messages. Memories, Moments and the Gallery are only for the emails here: they sign in with a link emailed to them (they can ask for one on the page any time) and stay signed in on that device for a year. Removing someone locks them out right away.</p>' +
+    (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') + (error ? '<p class="err">' + esc(error) + '</p>' : '') +
+    (rows ? '<table><tr><th>Who</th><th>Last signed in</th><th></th></tr>' + rows + '</table>' : '<p class="hint"><i>Nobody yet.</i></p>') +
+    '<h2 style="font-weight:400">Add someone</h2><form method="post" action="/admin/people"><input type="hidden" name="op" value="add">' +
+    '<label for="em">Email</label><input id="em" name="email" type="email" required maxlength="200" autocomplete="off">' +
+    '<label for="nm">Name (optional, just for you and their email)</label><input id="nm" name="name" type="text" maxlength="80" autocomplete="off">' +
+    '<label class="check"><input type="checkbox" name="invite" value="1" checked> Email them an invitation now</label>' +
+    '<button>Add</button></form>');
+}
+
+function changePeople(req, res) {
+  readForm(req, function (f) {
+    var email = normEmail(f.email), done = function (msg) { send(res, 303, "", { Location: "/admin/people?msg=" + encodeURIComponent(msg) }); };
+    if (!email) return peoplePage(res, "", "That doesn't look like an email address.");
+    if (f.op === "add") {
+      var v = viewer(email), name = String(f.name || "").replace(/\s+/g, " ").trim().slice(0, 80);
+      if (!v) {
+        if (viewers.length >= MAX_VIEWERS) return peoplePage(res, "", "That's " + MAX_VIEWERS + " people, the most the list holds.");
+        viewers.push(v = { email: email, name: name, addedAt: new Date().toISOString(), lastSignIn: "" });
+      } else if (name) v.name = name;
+      saveJSON(VIEWERS_FILE, viewers);
+      if (!f.invite) return done("Added " + email + ".");
+      return sendLink(email, siteHost(req), true, function (err) {
+        done(err ? "Added " + email + ", but the invitation couldn't be sent (" + err.message + ")." : "Added " + email + " and emailed them an invitation.");
+      });
+    }
+    if (!viewer(email)) return peoplePage(res, "", email + " isn't on the list.");
+    if (f.op === "invite") {
+      return sendLink(email, siteHost(req), true, function (err) {
+        done(err ? "Couldn't email " + email + " (" + err.message + ")." : "Emailed " + email + " a new sign-in link.");
+      });
+    }
+    if (f.op === "remove") {
+      viewers = viewers.filter(function (x) { return x.email !== email; });
+      saveJSON(VIEWERS_FILE, viewers);
+      pruneLinks();
+      saveJSON(LINKS_FILE, links);
+      return done("Removed " + email + ". They can't see Memories, Moments or the Gallery any more.");
+    }
+    peoplePage(res, "", "Unknown action.");
+  });
+}
+
+// Hand one plain-text email to Postfix on 127.0.0.1:25: a tiny SMTP client
+// that waits for each reply before sending the next command (the same as
+// in server/messages.js).
+function sendMail(to, subject, text, cb) {
+  var net = require("net");
+  var body = text.replace(/\r?\n/g, "\r\n").replace(/^\./gm, ".."); // dot-stuffing
+  var steps = [
+    "HELO localhost",
+    "MAIL FROM:<" + NOTIFY_FROM + ">",
+    "RCPT TO:<" + to + ">",
+    "DATA",
+    "From: Scout memorial <" + NOTIFY_FROM + ">\r\nTo: <" + to + ">\r\nSubject: " + subject +
+      "\r\nDate: " + new Date().toUTCString() + "\r\nMessage-ID: <" + crypto.randomUUID() + "@" + NOTIFY_FROM.split("@")[1] + ">" +
+      "\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" + body + "\r\n.",
+    "QUIT"
+  ];
+  var sock = net.connect(Number(process.env.SMTP_PORT) || 25, "127.0.0.1"), buf = "", done = false;
+  function finish(err) { if (!done) { done = true; sock.destroy(); cb(err); } }
+  sock.setTimeout(15000, function () { finish(new Error("timed out")); });
+  sock.on("error", finish);
+  sock.on("data", function (d) {
+    buf += d.toString("utf8");
+    var lines = buf.split("\r\n");
+    var last = lines[lines.length - 2];
+    if (!last || last.charAt(3) === "-") return; // wait for the whole reply
+    buf = "";
+    if (!/^[23]/.test(last)) return finish(new Error(last));
+    if (!steps.length) return finish(null);
+    sock.write(steps.shift() + "\r\n");
+  });
 }
 
 // Admin POSTs must come from this site's own pages, not a form on some other
@@ -822,10 +1097,13 @@ function hubPage(res, msg) {
       card("/media-admin#memories", "Memories", "The little stories in the Memories section, with their photos, GIFs and videos.") +
       card("/media-admin#slideshow", "Moments timing", "How long each photo shows in Moments.") +
       '</div>' +
+      '<h2>Who can see it</h2>' +
+      card("/admin/people", "Invited people", "The emails that can see Memories, Moments and the Gallery (" + viewers.length + (viewers.length === 1 ? " person" : " people") + "). Everyone can see the first page, the Memorial and Messages.") +
       '<h2>You</h2>' +
       card("/admin/password", "Change password", "Set your own password for signing in to these pages.") +
       '</main></body></html>';
-    send(res, 200, html, { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" });
+    // scout_in too, so an admin who signed in before there was one sees the whole page.
+    send(res, 200, html, { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY", "Set-Cookie": HINT_COOKIE + SESSION_MS / 1000 });
   });
 }
 
@@ -1685,7 +1963,13 @@ function adminClient() {
 http.createServer(function (req, res) {
   var u = new URL(req.url, "http://x");
   if (u.pathname === "/internal/import" && req.method === "POST") return importFromMessages(req, res, u.searchParams);
-  if (["/admin", "/admin/login", "/admin/logout", "/admin/password", "/media-admin", "/media-admin/upload"].indexOf(u.pathname) < 0) return send(res, 404, "Not found");
+  if (u.pathname === "/internal/auth") return authCheck(req, res);
+  if (u.pathname === "/access/request" && req.method === "POST") return requestLink(req, res);
+  if (u.pathname === "/access/verify") {
+    if (req.method === "POST") return sameOrigin(req) ? verify(req, res) : send(res, 403, "Forbidden");
+    return verifyPage(req, res, u.searchParams.get("t") || "");
+  }
+  if (["/admin", "/admin/login", "/admin/logout", "/admin/password", "/admin/people", "/media-admin", "/media-admin/upload"].indexOf(u.pathname) < 0) return send(res, 404, "Not found");
   if (u.pathname === "/admin/login") {
     if (req.method === "POST") return sameOrigin(req) ? login(req, res) : send(res, 403, "Forbidden");
     return isAdmin(req) ? send(res, 303, "", { Location: nextPage(u.searchParams.get("next")) }) : loginPage(res, "", u.searchParams.get("next"));
@@ -1699,10 +1983,12 @@ http.createServer(function (req, res) {
   }
   if (req.method === "GET" && u.pathname === "/admin") return hubPage(res, u.searchParams.get("msg"));
   if (req.method === "GET" && u.pathname === "/admin/password") return passwordPage(res, "");
+  if (req.method === "GET" && u.pathname === "/admin/people") return peoplePage(res, u.searchParams.get("msg"), "");
   if (req.method === "GET" && u.pathname === "/media-admin") return adminPage(req, res, u.searchParams);
   if (req.method !== "POST") return send(res, 405, "Method not allowed", { Allow: "GET, POST" });
   if (!sameOrigin(req)) return send(res, 403, "Forbidden");
   if (u.pathname === "/admin/password") return changePassword(req, res);
+  if (u.pathname === "/admin/people") return changePeople(req, res);
   if (u.pathname === "/media-admin/upload") return upload(req, res, u.searchParams);
   action(req, res);
 }).listen(PORT, HOST, function () {
