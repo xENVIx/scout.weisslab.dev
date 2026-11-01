@@ -91,10 +91,12 @@ function lockedOut() {
   scene.innerHTML =
     '<section class="narrow section access" id="more">' +
     '<div class="head"><h2>More of Scout</h2></div>' +
-    '<p>Scout’s memories, photos and videos are kept for family and friends. If you’ve been invited, enter your email and you’ll get a link to sign in.</p>' +
+    '<p>Scout’s memories, photos and videos are kept for family and friends. Enter your email: if you’ve been invited, you’ll get a link to sign in; if not, Scout’s family will get your request.</p>' +
     '<form class="access-form" id="access-form">' +
     '<label class="sr-only" for="access-email">Your email</label>' +
     '<input type="email" id="access-email" name="email" required maxlength="200" autocomplete="email" placeholder="Your email" />' +
+    '<label class="sr-only" for="access-name">Your name (optional)</label>' +
+    '<input type="text" id="access-name" name="name" maxlength="80" autocomplete="name" placeholder="Your name (optional, so the family knows who’s asking)" />' +
     '<div class="message-actions"><button type="submit" class="message-send">Send me a link</button>' +
     '<p class="message-status" id="access-status" aria-live="polite"></p></div>' +
     '</form></section>';
@@ -112,9 +114,9 @@ function lockedOut() {
     e.preventDefault();
     btn.disabled = true;
     status.textContent = "Sending…";
-    fetch("/access/request", { method: "POST", body: new URLSearchParams({ email: form.email.value.trim() }) })
+    fetch("/access/request", { method: "POST", body: new URLSearchParams({ email: form.email.value.trim(), name: form.elements.name.value.trim() }) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error); return j; }); })
-      .then(function (j) { status.textContent = j.message; form.email.value = ""; },
+      .then(function (j) { status.textContent = j.message; form.reset(); },
         function (err) { status.textContent = (err && err.message) || "Sorry, that didn’t work. Please try again."; })
       .then(function () { btn.disabled = false; });
   });

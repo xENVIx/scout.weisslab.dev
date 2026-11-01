@@ -381,7 +381,8 @@ html.is-loading body > * { visibility: hidden !important; }
 /* ---- "More of Scout": the sign-in for guests, in place of Memories,
    Moments and the Gallery (guestPage() in script.js) ---- */
 .access p { max-width: 34em; }
-.access .access-form input { max-width: 420px; margin-top: 0; }
+.access .access-form input { max-width: 420px; }
+.access .access-form input:first-of-type { margin-top: 0; }
 
 /* ---- messages (form + approved list; backend in server/messages.js) ---- */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

@@ -569,6 +569,11 @@ var LINK_MS = 2 * 60 * 60e3;          // a link someone asked for: 2 hours
 var INVITE_MS = 14 * 24 * 60 * 60e3;  // an invitation the owner sent: 14 days
 var MAX_VIEWERS = 500;
 var NOTIFY_FROM = process.env.NOTIFY_FROM || "scout@inlovingmemoryofscout.com";
+// Asking with an email that isn't on the list emails the owner here (the
+// same NOTIFY_EMAIL as the messages), at most once a day per email.
+var NOTIFY_EMAIL = process.env.NOTIFY_EMAIL || "";
+var ASK_EVERY_MS = 24 * 60 * 60e3;
+var asked = new Map(); // email -> when the owner was last told
 // The domains a sign-in link may point at (it's built from the request's
 // Host, so a made-up Host can't send someone's link elsewhere).
 var SITE_HOSTS = (process.env.SITE_HOSTS || "inlovingmemoryofscout.com,www.inlovingmemoryofscout.com,scout.weisslab.dev").split(",").map(function (h) { return h.trim(); }).filter(Boolean);
@@ -691,8 +696,18 @@ function requestLink(req, res) {
     var email = normEmail(f.email);
     if (!email) return json(res, 400, { error: "That doesn't look like an email address." });
     if (tooMany("ip:" + ip, 8)) return json(res, 429, { error: "Too many tries. Please wait a little while and try again." });
-    json(res, 200, { ok: true, message: "If that email is on Scout’s list, a sign-in link is on its way. It can take a minute; check your spam folder too." });
-    if (viewer(email) && !tooMany("email:" + email, 3)) sendLink(email, siteHost(req), false);
+    json(res, 200, { ok: true, message: "Thank you. If that email is on Scout’s list, a sign-in link is on its way (check your spam folder too). If it isn’t, Scout’s family will get your request." });
+    if (viewer(email)) { if (!tooMany("email:" + email, 3)) sendLink(email, siteHost(req), false); return; }
+    var name = String(f.name || "").replace(/\s+/g, " ").trim().slice(0, 80);
+    if (!NOTIFY_EMAIL || Date.now() - (asked.get(email) || 0) < ASK_EVERY_MS) return;
+    asked.set(email, Date.now());
+    var host = siteHost(req);
+    sendMail(NOTIFY_EMAIL, "Someone asked to see Scout's page", (name ? name + " (" + email + ")" : email) +
+      " asked to see all of Scout's page (Memories, Moments and the Gallery), and isn't on your list.\n\nTo let them in, add them here (it emails them an invitation):\n\n" +
+      "https://" + host + "/admin/people?add=" + encodeURIComponent(email) + (name ? "&name=" + encodeURIComponent(name) : "") +
+      "\n\nIf you don't know them, just ignore this.", function (err) {
+      if (err) console.error("couldn't email " + NOTIFY_EMAIL + " about " + email + ": " + err.message);
+    });
   });
 }
 
@@ -736,7 +751,8 @@ function verify(req, res) {
 
 function when(iso) { return iso ? new Date(iso).toISOString().slice(0, 10) : "never"; }
 
-function peoplePage(res, msg, error) {
+function peoplePage(res, msg, error, add) {
+  add = add || {};
   var rows = viewers.slice().sort(function (a, b) { return a.email < b.email ? -1 : 1; }).map(function (v) {
     return '<tr><td>' + esc(v.name || "") + (v.name ? '<br>' : '') + '<span class="when">' + esc(v.email) + '</span></td>' +
       '<td class="when">' + when(v.lastSignIn) + '</td><td>' +
@@ -750,8 +766,8 @@ function peoplePage(res, msg, error) {
     (msg ? '<p class="msg">' + esc(msg) + '</p>' : '') + (error ? '<p class="err">' + esc(error) + '</p>' : '') +
     (rows ? '<table><tr><th>Who</th><th>Last signed in</th><th></th></tr>' + rows + '</table>' : '<p class="hint"><i>Nobody yet.</i></p>') +
     '<h2 style="font-weight:400">Add someone</h2><form method="post" action="/admin/people"><input type="hidden" name="op" value="add">' +
-    '<label for="em">Email</label><input id="em" name="email" type="email" required maxlength="200" autocomplete="off">' +
-    '<label for="nm">Name (optional, just for you and their email)</label><input id="nm" name="name" type="text" maxlength="80" autocomplete="off">' +
+    '<label for="em">Email</label><input id="em" name="email" type="email" required maxlength="200" autocomplete="off" value="' + esc(normEmail(add.email)) + '"' + (add.email ? ' autofocus' : '') + '>' +
+    '<label for="nm">Name (optional, just for you and their email)</label><input id="nm" name="name" type="text" maxlength="80" autocomplete="off" value="' + esc(String(add.name || "").slice(0, 80)) + '">' +
     '<label class="check"><input type="checkbox" name="invite" value="1" checked> Email them an invitation now</label>' +
     '<button>Add</button></form>');
 }
@@ -1983,7 +1999,7 @@ http.createServer(function (req, res) {
   }
   if (req.method === "GET" && u.pathname === "/admin") return hubPage(res, u.searchParams.get("msg"));
   if (req.method === "GET" && u.pathname === "/admin/password") return passwordPage(res, "");
-  if (req.method === "GET" && u.pathname === "/admin/people") return peoplePage(res, u.searchParams.get("msg"), "");
+  if (req.method === "GET" && u.pathname === "/admin/people") return peoplePage(res, u.searchParams.get("msg"), "", { email: u.searchParams.get("add"), name: u.searchParams.get("name") });
   if (req.method === "GET" && u.pathname === "/media-admin") return adminPage(req, res, u.searchParams);
   if (req.method !== "POST") return send(res, 405, "Method not allowed", { Allow: "GET, POST" });
   if (!sameOrigin(req)) return send(res, 403, "Forbidden");
