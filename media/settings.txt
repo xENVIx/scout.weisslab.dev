@@ -1,1 +1,1 @@
-slide_seconds=6
+slide_seconds=10

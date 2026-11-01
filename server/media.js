@@ -750,7 +750,7 @@ function smallPage(res, status, title, body, headers) {
     'th{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:#8F4818}td form{display:inline}.when{color:#6B5748;font-size:13px}' +
     '.check{display:flex;gap:8px;align-items:center;font-weight:400;font-size:14px;margin:-4px 0 16px}' +
     '</style></head><body><main>' + body + '</main></body></html>';
-  send(res, status, html, Object.assign({ "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer" }, headers || {}));
+  send(res, status, html, Object.assign({ "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY", "Referrer-Policy": "same-origin" }, headers || {}));
 }
 
 function verifyPage(req, res, token) {
