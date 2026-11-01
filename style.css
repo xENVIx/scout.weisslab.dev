@@ -383,6 +383,16 @@ html.is-loading body > * { visibility: hidden !important; }
 .access p { max-width: 34em; }
 .access .access-form input { max-width: 420px; }
 .access .access-form input:first-of-type { margin-top: 0; }
+.access-hint { margin: 0 0 12px; font-family: var(--sans); font-size: 15px; color: var(--ink-soft); }
+.access-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin: 22px 0 18px; }
+.access-tabs button {
+  padding: 9px 18px; border: 1px solid var(--edge); border-radius: 999px;
+  background: #FFFDF8; color: var(--ink-soft); cursor: pointer;
+  font: 600 12px var(--sans); letter-spacing: .12em; text-transform: uppercase;
+}
+.access-tabs button:hover { border-color: var(--accent); color: var(--accent); }
+.access-tabs button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: #FFF8EC; }
+.access-form input[hidden] { display: none; }
 
 /* ---- messages (form + approved list; backend in server/messages.js) ---- */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

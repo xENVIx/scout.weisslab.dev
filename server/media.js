@@ -696,8 +696,14 @@ function requestLink(req, res) {
     var email = normEmail(f.email);
     if (!email) return json(res, 400, { error: "That doesn't look like an email address." });
     if (tooMany("ip:" + ip, 8)) return json(res, 429, { error: "Too many tries. Please wait a little while and try again." });
-    json(res, 200, { ok: true, message: "Thank you. If that email is on Scout’s list, a sign-in link is on its way (check your spam folder too). If it isn’t, Scout’s family will get your request." });
+    var request = !!f.request;
+    // The same answer whether or not the email is listed, so the page never
+    // says who's on the list.
+    json(res, 200, { ok: true, message: request
+      ? "Thank you, your request has been sent to Scout’s family. (If you were already invited, a sign-in link is on its way instead.)"
+      : "If that email has been invited, a sign-in link is on its way (check your spam folder too). Not invited yet? Request access instead." });
     if (viewer(email)) { if (!tooMany("email:" + email, 3)) sendLink(email, siteHost(req), false); return; }
+    if (!request) return;
     var name = String(f.name || "").replace(/\s+/g, " ").trim().slice(0, 80);
     if (!NOTIFY_EMAIL || Date.now() - (asked.get(email) || 0) < ASK_EVERY_MS) return;
     asked.set(email, Date.now());

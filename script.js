@@ -91,13 +91,17 @@ function lockedOut() {
   scene.innerHTML =
     '<section class="narrow section access" id="more">' +
     '<div class="head"><h2>More of Scout</h2></div>' +
-    '<p>Scout’s memories, photos and videos are kept for family and friends. Enter your email: if you’ve been invited, you’ll get a link to sign in; if not, Scout’s family will get your request.</p>' +
+    '<p>Scout’s memories, photos and videos are kept for family and friends.</p>' +
+    '<div class="access-tabs" role="group" aria-label="Sign in or request access">' +
+    '<button type="button" data-mode="signin" aria-pressed="true">Sign in</button>' +
+    '<button type="button" data-mode="request" aria-pressed="false">Request access</button></div>' +
     '<form class="access-form" id="access-form">' +
+    '<p class="access-hint" id="access-hint"></p>' +
     '<label class="sr-only" for="access-email">Your email</label>' +
     '<input type="email" id="access-email" name="email" required maxlength="200" autocomplete="email" placeholder="Your email" />' +
-    '<label class="sr-only" for="access-name">Your name (optional)</label>' +
-    '<input type="text" id="access-name" name="name" maxlength="80" autocomplete="name" placeholder="Your name (optional, so the family knows who’s asking)" />' +
-    '<div class="message-actions"><button type="submit" class="message-send">Send me a link</button>' +
+    '<label class="sr-only" for="access-name">Your name</label>' +
+    '<input type="text" id="access-name" name="name" maxlength="80" autocomplete="name" placeholder="Your name" hidden />' +
+    '<div class="message-actions"><button type="submit" class="message-send" id="access-send"></button>' +
     '<p class="message-status" id="access-status" aria-live="polite"></p></div>' +
     '</form></section>';
   before.parentNode.insertBefore(scene, before);
@@ -109,12 +113,37 @@ function lockedOut() {
     a.textContent = "Sign in";
     nav.insertBefore(a, msgs);
   });
-  var form = scene.querySelector("form"), status = scene.querySelector("#access-status"), btn = form.querySelector("button");
+  // Sign in: just the email, and a link is sent if it's on the list.
+  // Request access: email and name, sent to the owner to add them.
+  var form = scene.querySelector("form"), status = scene.querySelector("#access-status"), btn = scene.querySelector("#access-send");
+  var hint = scene.querySelector("#access-hint"), nameIn = scene.querySelector("#access-name"), mode = "signin";
+  var MODES = {
+    signin: { hint: "Invited already? Enter your email and you’ll get a link to sign in.", button: "Send me a link" },
+    request: { hint: "Not invited yet? Leave your email and name, and Scout’s family will get your request.", button: "Request access" }
+  };
+  function setMode(m) {
+    mode = m;
+    Array.prototype.forEach.call(scene.querySelectorAll(".access-tabs button"), function (b) {
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-mode") === m));
+    });
+    hint.textContent = MODES[m].hint;
+    btn.textContent = MODES[m].button;
+    nameIn.hidden = m !== "request";
+    nameIn.required = m === "request";
+    status.textContent = "";
+  }
+  setMode("signin");
+  scene.querySelector(".access-tabs").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-mode]");
+    if (b) setMode(b.getAttribute("data-mode"));
+  });
   form.addEventListener("submit", function (e) {
     e.preventDefault();
     btn.disabled = true;
     status.textContent = "Sending…";
-    fetch("/access/request", { method: "POST", body: new URLSearchParams({ email: form.email.value.trim(), name: form.elements.name.value.trim() }) })
+    var data = { email: form.email.value.trim() };
+    if (mode === "request") { data.request = "1"; data.name = nameIn.value.trim(); }
+    fetch("/access/request", { method: "POST", body: new URLSearchParams(data) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error); return j; }); })
       .then(function (j) { status.textContent = j.message; form.reset(); },
         function (err) { status.textContent = (err && err.message) || "Sorry, that didn’t work. Please try again."; })
